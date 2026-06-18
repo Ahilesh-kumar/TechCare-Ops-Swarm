@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Flame,
   Server,
@@ -28,6 +28,9 @@ import {
   CheckCircle,
   XCircle,
   Eye,
+  Shield,
+  Search,
+  Brain,
 } from "lucide-react";
 
 interface SwarmLog {
@@ -35,9 +38,64 @@ interface SwarmLog {
   text: string;
 }
 
+interface SwarmReportSections {
+  safety: string;
+  execution: string;
+  detective: string;
+  knowledge: string;
+}
+
+const parseSwarmReport = (reportText: string): SwarmReportSections => {
+  const sections: SwarmReportSections = {
+    safety: "",
+    execution: "",
+    detective: "",
+    knowledge: ""
+  };
+
+  if (!reportText) return sections;
+
+  if (!reportText.includes("---") && !reportText.includes("Execution Log") && !reportText.includes("Root Cause Analysis")) {
+    sections.safety = reportText;
+    return sections;
+  }
+
+  const parts = reportText.split(/\n\s*---\s*\n/);
+  
+  parts.forEach((part) => {
+    const trimmed = part.trim();
+    if (!trimmed) return;
+
+    if (trimmed.includes("Incident Summary") || trimmed.includes("Mitigation Report") || trimmed.includes("EXECUTIVE SUMMARY")) {
+      sections.safety = trimmed.replace(/^#+\s*.*Incident Summary\s*/i, "").trim();
+    } else if (trimmed.includes("Execution Log") || trimmed.includes("ACTUATOR_EXECUTION_LOG")) {
+      let content = trimmed.replace(/^#+\s*.*Execution Log.*\s*/i, "").trim();
+      if (content.startsWith("```")) {
+        content = content.replace(/^```[a-z]*\n/i, "");
+      }
+      if (content.endsWith("```")) {
+        content = content.slice(0, -3).trim();
+      }
+      sections.execution = content;
+    } else if (trimmed.includes("Root Cause Analysis") || trimmed.includes("Forensic Report") || trimmed.includes("INCIDENT TIMELINE")) {
+      sections.detective = trimmed.replace(/^#+\s*.*Forensic Report.*\s*/i, "").trim();
+    } else if (trimmed.includes("Knowledge Curator") || trimmed.includes("LEARNING OUTCOME") || trimmed.includes("Updated Specification")) {
+      sections.knowledge = trimmed.replace(/^#+\s*.*Self-Learning Update.*\s*/i, "").trim();
+    } else {
+      if (!sections.safety) {
+        sections.safety = trimmed;
+      }
+    }
+  });
+
+  return sections;
+};
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("control");
   const [reportFontSize, setReportFontSize] = useState<"sm" | "base" | "lg">("base");
+  const [activeReportSubTab, setActiveReportSubTab] = useState<"safety" | "execution" | "detective" | "knowledge">("safety");
+  const [activeHistoryReportSubTab, setActiveHistoryReportSubTab] = useState<"safety" | "execution" | "detective" | "knowledge">("safety");
   const [alertInput, setAlertInput] = useState("");
   const [swarmLogs, setSwarmLogs] = useState<SwarmLog[]>([]);
   const [finalReport, setFinalReport] = useState("");
@@ -87,6 +145,14 @@ export default function Home() {
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanLogs, setScanLogs] = useState<SwarmLog[]>([]);
   const [scanResults, setScanResults] = useState<any[]>([]);
+
+  const parsedReport = useMemo(() => {
+    return parseSwarmReport(finalReport);
+  }, [finalReport]);
+
+  const parsedHistoryReport = useMemo(() => {
+    return selectedHistoryItem ? parseSwarmReport(selectedHistoryItem.report) : null;
+  }, [selectedHistoryItem]);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1168,8 +1234,88 @@ export default function Home() {
                           <p className="text-xs">Waiting for swarm Safety Auditor compliance approval...</p>
                         </div>
                       ) : (
-                        <div className="text-slate-700">
-                          {renderReportDocument(finalReport, activeEquipment || undefined)}
+                        <div className="text-slate-700 flex flex-col h-full">
+                          {/* Sub-tab Bar */}
+                          {finalReport.includes("---") && (
+                            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 mb-6 shrink-0">
+                              <button
+                                onClick={() => setActiveReportSubTab("safety")}
+                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all border ${
+                                  activeReportSubTab === "safety"
+                                    ? "bg-blue-50 text-[#0b57d0] border-blue-200 shadow-sm"
+                                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                              >
+                                <Shield className="h-3.5 w-3.5" />
+                                <span>Safety Report</span>
+                              </button>
+                              {parsedReport.execution && (
+                                <button
+                                  onClick={() => setActiveReportSubTab("execution")}
+                                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all border ${
+                                    activeReportSubTab === "execution"
+                                      ? "bg-purple-50 text-purple-700 border-purple-200 shadow-sm"
+                                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                  }`}
+                                >
+                                  <Activity className="h-3.5 w-3.5" />
+                                  <span>Execution logs</span>
+                                </button>
+                              )}
+                              {parsedReport.detective && (
+                                <button
+                                  onClick={() => setActiveReportSubTab("detective")}
+                                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all border ${
+                                    activeReportSubTab === "detective"
+                                      ? "bg-rose-50 text-rose-700 border-rose-200 shadow-sm"
+                                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                  }`}
+                                >
+                                  <Search className="h-3.5 w-3.5" />
+                                  <span>Detective Report</span>
+                                </button>
+                              )}
+                              {parsedReport.knowledge && (
+                                <button
+                                  onClick={() => setActiveReportSubTab("knowledge")}
+                                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all border ${
+                                    activeReportSubTab === "knowledge"
+                                      ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
+                                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                  }`}
+                                >
+                                  <Brain className="h-3.5 w-3.5" />
+                                  <span>Knowledge Update</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Sub-tab Content */}
+                          <div className="flex-1 animate-fade-in">
+                            {activeReportSubTab === "execution" && parsedReport.execution ? (
+                              <div className="space-y-3">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  Containment Swarm Actuator Status Logs
+                                </div>
+                                <div className="bg-slate-900 text-emerald-400 font-mono text-xs p-6 rounded-xl border border-slate-850 leading-relaxed overflow-x-auto whitespace-pre shadow-inner">
+                                  {parsedReport.execution}
+                                </div>
+                              </div>
+                            ) : activeReportSubTab === "detective" && parsedReport.detective ? (
+                              <div>
+                                {renderReportDocument(parsedReport.detective, activeEquipment || undefined)}
+                              </div>
+                            ) : activeReportSubTab === "knowledge" && parsedReport.knowledge ? (
+                              <div>
+                                {renderReportDocument(parsedReport.knowledge, activeEquipment || undefined)}
+                              </div>
+                            ) : (
+                              <div>
+                                {renderReportDocument(parsedReport.safety || finalReport, activeEquipment || undefined)}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1499,7 +1645,10 @@ export default function Home() {
                             <td className="py-3.5 pr-4 font-bold text-slate-700">{item.latency}s</td>
                             <td className="py-3.5 text-right">
                               <button
-                                onClick={() => setSelectedHistoryItem(item)}
+                                onClick={() => {
+                                  setSelectedHistoryItem(item);
+                                  setActiveHistoryReportSubTab("safety");
+                                }}
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50 py-1.5 px-3 rounded-full border border-blue-200 transition"
                               >
                                 <Eye className="h-3 w-3" />
@@ -1590,28 +1739,133 @@ export default function Home() {
                       {/* Audit report details */}
                       <div className="space-y-2">
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Compiled Swarm Safety Report:</div>
-                        <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl text-xs font-sans leading-relaxed text-slate-700 whitespace-pre-wrap max-h-96 overflow-y-auto space-y-4">
+                        <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl text-xs font-sans leading-relaxed text-slate-700 whitespace-pre-wrap max-h-96 overflow-y-auto flex flex-col gap-4">
                           {!selectedHistoryItem.report ? (
                             <div className="flex flex-col items-center justify-center text-slate-400 py-10">
                               <FileText className="h-8 w-8 opacity-25 mb-2" />
                               <p className="text-xs">No report generated.</p>
                             </div>
                           ) : (
-                            selectedHistoryItem.report.split("\n\n").map((section: string, idx: number) => {
-                              if (section.startsWith("###") || section.startsWith("##") || section.startsWith("#")) {
-                                const headingText = section.replace(/^#+\s+/, "").trim();
-                                return (
-                                  <h4 key={idx} className="font-black text-[#0b57d0] border-b border-slate-200 pb-2 mt-5 text-xs uppercase tracking-wider">
-                                    {headingText}
-                                  </h4>
-                                );
-                              }
-                              return (
-                                <p key={idx} className="text-xs whitespace-pre-wrap text-slate-700 leading-relaxed">
-                                  {renderMarkdownText(section)}
-                                </p>
-                              );
-                            })
+                            <div className="flex flex-col h-full w-full">
+                              {/* History Sub-tab Bar */}
+                              {selectedHistoryItem.report.includes("---") && parsedHistoryReport && (
+                                <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 mb-4 shrink-0 bg-white p-2 rounded-lg">
+                                  <button
+                                    onClick={() => setActiveHistoryReportSubTab("safety")}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                      activeHistoryReportSubTab === "safety"
+                                        ? "bg-blue-50 text-[#0b57d0] border-blue-200 shadow-sm"
+                                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                    }`}
+                                  >
+                                    <Shield className="h-3.5 w-3.5" />
+                                    <span>Safety Report</span>
+                                  </button>
+                                  {parsedHistoryReport.execution && (
+                                    <button
+                                      onClick={() => setActiveHistoryReportSubTab("execution")}
+                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                        activeHistoryReportSubTab === "execution"
+                                          ? "bg-purple-50 text-purple-700 border-purple-200 shadow-sm"
+                                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                      }`}
+                                    >
+                                      <Activity className="h-3.5 w-3.5" />
+                                      <span>Execution logs</span>
+                                    </button>
+                                  )}
+                                  {parsedHistoryReport.detective && (
+                                    <button
+                                      onClick={() => setActiveHistoryReportSubTab("detective")}
+                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                        activeHistoryReportSubTab === "detective"
+                                          ? "bg-rose-50 text-rose-700 border-rose-200 shadow-sm"
+                                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                      }`}
+                                    >
+                                      <Search className="h-3.5 w-3.5" />
+                                      <span>Detective Report</span>
+                                    </button>
+                                  )}
+                                  {parsedHistoryReport.knowledge && (
+                                    <button
+                                      onClick={() => setActiveHistoryReportSubTab("knowledge")}
+                                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                        activeHistoryReportSubTab === "knowledge"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200 shadow-sm"
+                                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                                      }`}
+                                    >
+                                      <Brain className="h-3.5 w-3.5" />
+                                      <span>Knowledge Update</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* History Sub-tab Content */}
+                              <div className="flex-1 mt-2">
+                                {activeHistoryReportSubTab === "execution" && parsedHistoryReport?.execution ? (
+                                  <div className="bg-slate-900 text-emerald-400 font-mono text-[11px] p-5 rounded-xl border border-slate-850 leading-relaxed overflow-x-auto whitespace-pre shadow-inner">
+                                    {parsedHistoryReport.execution}
+                                  </div>
+                                ) : activeHistoryReportSubTab === "detective" && parsedHistoryReport?.detective ? (
+                                  <div className="space-y-4">
+                                    {parsedHistoryReport.detective.split("\n\n").map((section: string, idx: number) => {
+                                      if (section.startsWith("###") || section.startsWith("##") || section.startsWith("#")) {
+                                        const headingText = section.replace(/^#+\s+/, "").trim();
+                                        return (
+                                          <h4 key={idx} className="font-black text-[#0b57d0] border-b border-slate-200 pb-2 mt-5 text-xs uppercase tracking-wider">
+                                            {headingText}
+                                          </h4>
+                                        );
+                                      }
+                                      return (
+                                        <p key={idx} className="text-xs whitespace-pre-wrap text-slate-700 leading-relaxed">
+                                          {renderMarkdownText(section)}
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                ) : activeHistoryReportSubTab === "knowledge" && parsedHistoryReport?.knowledge ? (
+                                  <div className="space-y-4">
+                                    {parsedHistoryReport.knowledge.split("\n\n").map((section: string, idx: number) => {
+                                      if (section.startsWith("###") || section.startsWith("##") || section.startsWith("#")) {
+                                        const headingText = section.replace(/^#+\s+/, "").trim();
+                                        return (
+                                          <h4 key={idx} className="font-black text-[#0b57d0] border-b border-slate-200 pb-2 mt-5 text-xs uppercase tracking-wider">
+                                            {headingText}
+                                          </h4>
+                                        );
+                                      }
+                                      return (
+                                        <p key={idx} className="text-xs whitespace-pre-wrap text-slate-700 leading-relaxed">
+                                          {renderMarkdownText(section)}
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-4">
+                                    {(parsedHistoryReport?.safety || selectedHistoryItem.report).split("\n\n").map((section: string, idx: number) => {
+                                      if (section.startsWith("###") || section.startsWith("##") || section.startsWith("#")) {
+                                        const headingText = section.replace(/^#+\s+/, "").trim();
+                                        return (
+                                          <h4 key={idx} className="font-black text-[#0b57d0] border-b border-slate-200 pb-2 mt-5 text-xs uppercase tracking-wider">
+                                            {headingText}
+                                          </h4>
+                                        );
+                                      }
+                                      return (
+                                        <p key={idx} className="text-xs whitespace-pre-wrap text-slate-700 leading-relaxed">
+                                          {renderMarkdownText(section)}
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>

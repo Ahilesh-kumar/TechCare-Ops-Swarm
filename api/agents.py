@@ -849,7 +849,7 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
             "{\n"
             "  \"safe\": true,\n"
             "  \"feedback\": \"\",\n"
-            "  \"report\": \"Full markdown incident report using headers: EXECUTIVE SUMMARY, IMPORTANT STEPS HIGHLIGHTED, STEP-BY-STEP ACTION REQUIRED, SAFETY PRECAUTIONS, CONCLUSION, COMPLIANCE SIGN-OFF\"\n"
+            "  \"report\": \"Finalized incident report formatted as an extremely concise Markdown document. Limit each section to a maximum of 1-2 bullet points or short sentences, focusing only on the absolute essentials and important details. Do not use built-in emojis in titles/headers. Use these exact headers: EXECUTIVE SUMMARY, IMPORTANT STEPS HIGHLIGHTED, STEP-BY-STEP ACTION REQUIRED, SAFETY PRECAUTIONS, CONCLUSION, COMPLIANCE SIGN-OFF\"\n"
             "}"
         )
 
@@ -902,14 +902,15 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
             f"--- TECHNICAL RESOLUTION PROPOSED BY SYSTEMS ANALYST ---\n"
             f"{resolution_text}\n"
             "-----------------------------------------------------------\n\n"
-            "Review the resolution, check for safety, and output the final incident report using these exact headers:\n"
+            "Review the resolution, check for safety, and output the final incident report. "
+            "The report must be formatted as an extremely concise Markdown document. Limit each section to a maximum of 1-2 bullet points or short sentences, focusing only on the absolute essentials and important details. "
+            "Do not use built-in emojis in titles/headers. Use these exact headers:\n"
             "- **EXECUTIVE SUMMARY:**\n"
             "- **IMPORTANT STEPS HIGHLIGHTED:**\n"
             "- **STEP-BY-STEP ACTION REQUIRED:**\n"
             "- **SAFETY PRECAUTIONS:**\n"
             "- **CONCLUSION:**\n"
-            "- **COMPLIANCE SIGN-OFF:**\n\n"
-            "Ensure the markdown structure is perfectly compliant and professional."
+            "- **COMPLIANCE SIGN-OFF:**"
         )
 
         try:
@@ -1542,16 +1543,16 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                 # Build combined response
                 if learning_summary:
                     report = (
-                        f"# 🛡️ TechCare Swarm Final Incident Summary\n\n"
+                        f"# TechCare Swarm Final Incident Summary\n\n"
                         f"{safety_report}\n\n"
                         f"---\n\n"
-                        f"# ⚙️ Execution Log & System Containment Status\n\n"
+                        f"# Execution Log & System Containment Status\n\n"
                         f"```\n{execution_log}\n```\n\n"
                         f"---\n\n"
-                        f"# 🔍 Root Cause Analysis & Forensic Report\n\n"
+                        f"# Root Cause Analysis & Forensic Report\n\n"
                         f"{forensic_report}\n\n"
                         f"---\n\n"
-                        f"# 🧠 Knowledge Curator Self-Learning Update\n\n"
+                        f"# Knowledge Curator Self-Learning Update\n\n"
                         f"{learning_summary}"
                     )
                 else:
@@ -1703,16 +1704,16 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
 
         # Combine reports for the user
         combined_report = (
-            f"# 🛡️ TechCare Swarm Final Incident Summary\n\n"
+            f"# TechCare Swarm Final Incident Summary\n\n"
             f"{report}\n\n"
             f"---\n\n"
-            f"# ⚙️ Execution Log & System Containment Status\n\n"
+            f"# Execution Log & System Containment Status\n\n"
             f"```\n{execution_log}\n```\n\n"
             f"---\n\n"
-            f"# 🔍 Root Cause Analysis & Forensic Report\n\n"
+            f"# Root Cause Analysis & Forensic Report\n\n"
             f"{forensic_report}\n\n"
             f"---\n\n"
-            f"# 🧠 Knowledge Curator Self-Learning Update\n\n"
+            f"# Knowledge Curator Self-Learning Update\n\n"
             f"{learning_summary}"
         )
 
