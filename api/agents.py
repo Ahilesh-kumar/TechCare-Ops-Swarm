@@ -1529,7 +1529,7 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                             break
                     except Exception as poll_err:
                         logger.error(f"Error polling room messages: {poll_err}")
-                    await asyncio.sleep(3.0)
+                    await asyncio.sleep(1.0)
                     
                 if not safety_report and not learning_summary:
                     elapsed = int(time.time() - start_time)
