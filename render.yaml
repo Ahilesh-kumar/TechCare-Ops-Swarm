@@ -23,5 +23,17 @@ services:
         sync: false
       - key: BAND_AUDITOR_TOKEN
         sync: false
+      - key: BAND_EXECUTION_ID
+        sync: false
+      - key: BAND_EXECUTION_TOKEN
+        sync: false
+      - key: BAND_FORENSIC_ID
+        sync: false
+      - key: BAND_FORENSIC_TOKEN
+        sync: false
+      - key: BAND_CURATOR_ID
+        sync: false
+      - key: BAND_CURATOR_TOKEN
+        sync: false
       - key: PYTHON_VERSION
         value: "3.11.9"

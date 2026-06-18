@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Flame,
   Server,
@@ -262,7 +262,7 @@ export default function Home() {
   }, [isRunning]);
 
   // Fetch all databases & configurations from the API
-  const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
     try {
       // 1. Fetch Blueprints
       const bpRes = await fetch("/api/blueprints");
@@ -307,11 +307,11 @@ export default function Home() {
     } catch (err) {
       console.error("Failed to sync backend sandbox state", err);
     }
-  };
+  }, [selectedBlueprint]);
 
   useEffect(() => {
     fetchAllData();
-  }, []);
+  }, [fetchAllData]);
 
   // Telemetry presets text mapper
   const getPresetText = (name: string) => {
