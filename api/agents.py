@@ -317,13 +317,15 @@ class CoordinatorAdapter(SimpleAdapter[list]):
         """
         Uses Groq API to parse the alert and identify the equipment name/model.
         """
+        # Fast path check: if standard equipment is explicitly mentioned, return it directly
+        alert_lower = alert_text.lower()
+        for name in ["Vat 4", "Server Rack B", "Robotic Arm 9", "Cooling Tower 2", "Main Generator Block A", "Pneumatic Press 7"]:
+            if name.lower() in alert_lower:
+                return name
+
         self.system_prompt = self._load_system_prompt()
         if not groq_client or mock_mode:
             # Fallback parsing if Groq API key is not present
-            alert_lower = alert_text.lower()
-            for name in ["Vat 4", "Server Rack B", "Robotic Arm 9", "Cooling Tower 2", "Main Generator Block A", "Pneumatic Press 7"]:
-                if name.lower() in alert_lower:
-                    return name
             # Attempt to extract capitalized words + numbers (e.g., Cisco Switch 2960-X, Tesla Megapack 2)
             for indicator in ["on ", "in ", "for ", "equipment "]:
                 if indicator in alert_lower:
@@ -634,25 +636,25 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         if status_callback:
             await status_callback("Systems Analyst Agent", f"🔍 Unrecognized equipment **'{equipment_name}'**. Checking local documents catalog...")
             if not mock_mode:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
             if manual_content:
                 await status_callback("Systems Analyst Agent", f"📄 Found matching manual **'{matched_filename}'** in `/manuals` folder.")
                 if not mock_mode:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.05)
             else:
                 await status_callback("Systems Analyst Agent", f"⚠️ No matching manual found in `/manuals`. Using web/LLM fallback.")
                 if not mock_mode:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.05)
             
             await status_callback("Systems Analyst Agent", f"⚠️ Safety Policy: Ingesting '{equipment_name}' requires human approval.")
             if not mock_mode:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
             await status_callback("Systems Analyst Agent", f"✅ [Bypass / Auto-Auth] Safety Officer authorized ingestion. Committing...")
             if not mock_mode:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
             await status_callback("Systems Analyst Agent", f"🧠 Extracting typical safety thresholds and recovery protocols...")
             if not mock_mode:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
         
         if tools and not mock_mode:
             # Live Band SDK mode chat messaging
@@ -661,35 +663,35 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
                     content=f"🔍 Unrecognized equipment **'{equipment_name}'**. Checking local manuals...",
                     mentions=[self.auditor_id]
                 )
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
                 if manual_content:
                     await tools.send_message(
                         content=f"📄 Found matching manual **'{matched_filename}'** in `/manuals` folder.",
                         mentions=[self.auditor_id]
                     )
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.05)
                 else:
                     await tools.send_message(
                         content=f"⚠️ No matching manual found in `/manuals`. Using web/LLM fallback.",
                         mentions=[self.auditor_id]
                     )
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.05)
                 
                 await tools.send_message(
                     content=f"⚠️ Safety Policy: Ingesting '{equipment_name}' requires human approval.",
                     mentions=[self.auditor_id]
                 )
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
                 await tools.send_message(
                     content=f"✅ [Bypass / Auto-Auth] Safety Officer authorized ingestion. Committing...",
                     mentions=[self.auditor_id]
                 )
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
                 await tools.send_message(
                     content=f"🧠 Extracting typical safety thresholds and recovery protocols...",
                     mentions=[self.auditor_id]
                 )
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
             except Exception as e:
                 logger.warning(f"Failed to send status messages in room: {e}")
 
@@ -767,7 +769,7 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         
         if status_callback:
             await status_callback("Systems Analyst Agent", f"💾 Auto-committed blueprint for **'{equipment_name}'** to `database.json`!")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.05)
         
         if tools:
             try:
@@ -775,7 +777,7 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
                     content=f"💾 Auto-committed blueprint for **'{equipment_name}'** to local database:\n\n{spec_content}",
                     mentions=[self.auditor_id]
                 )
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.05)
             except Exception as e:
                 logger.warning(f"Failed to send success message in room: {e}")
 
@@ -1664,7 +1666,7 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                             break
                     except Exception as poll_err:
                         logger.error(f"Error polling room messages: {poll_err}")
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(0.5)
                     
                 if not safety_report and not learning_summary:
                     elapsed = int(time.time() - start_time)
