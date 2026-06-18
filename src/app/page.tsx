@@ -59,7 +59,14 @@ export default function Home() {
   const [newBlueprintName, setNewBlueprintName] = useState("");
   const [newBlueprintSpec, setNewBlueprintSpec] = useState("");
 
-  const [prompts, setPrompts] = useState({ coordinator: "", analyst: "", auditor: "" });
+  const [prompts, setPrompts] = useState({
+    coordinator: "",
+    analyst: "",
+    auditor: "",
+    execution: "",
+    forensic: "",
+    curator: "",
+  });
   const [isSavingPrompts, setIsSavingPrompts] = useState(false);
 
   const [history, setHistory] = useState<any[]>([]);
@@ -1027,6 +1034,15 @@ export default function Home() {
                           } else if (log.agent.includes("Auditor")) {
                             borderClass = "border-l-2 border-l-emerald-500";
                             badgeClass = "bg-emerald-50 text-emerald-700 border border-emerald-200/50";
+                          } else if (log.agent.includes("Execution")) {
+                            borderClass = "border-l-2 border-l-purple-500";
+                            badgeClass = "bg-purple-50 text-purple-700 border border-purple-200/50";
+                          } else if (log.agent.includes("Forensic")) {
+                            borderClass = "border-l-2 border-l-rose-500";
+                            badgeClass = "bg-rose-50 text-rose-700 border border-rose-200/50";
+                          } else if (log.agent.includes("Curator") || log.agent.includes("Learning")) {
+                            borderClass = "border-l-2 border-l-cyan-500";
+                            badgeClass = "bg-cyan-50 text-cyan-700 border border-cyan-200/50";
                           }
 
                           return (
@@ -1037,7 +1053,11 @@ export default function Home() {
                               <div className="flex items-center gap-2.5">
                                 <span className="text-[10px] font-bold text-slate-600">{log.agent}</span>
                                 <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${badgeClass}`}>
-                                  {log.agent.includes("Coordinator") ? "Coordinator" : log.agent.includes("Analyst") ? "Analyst" : "Auditor"}
+                                  {log.agent.includes("Coordinator") ? "Coordinator" :
+                                   log.agent.includes("Analyst") ? "Analyst" :
+                                   log.agent.includes("Auditor") ? "Auditor" :
+                                   log.agent.includes("Execution") ? "Execution" :
+                                   log.agent.includes("Forensic") ? "Forensic" : "Curator"}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-sans">
@@ -1277,6 +1297,48 @@ export default function Home() {
                   <textarea
                     value={prompts.auditor}
                     onChange={(e) => setPrompts({ ...prompts, auditor: e.target.value })}
+                    className="w-full text-xs font-mono border border-slate-300 bg-slate-50 rounded-xl p-3.5 h-28 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 leading-relaxed"
+                  />
+                </div>
+
+                {/* Execution Prompts */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-full">
+                      4. Execution Agent Prompt
+                    </span>
+                  </div>
+                  <textarea
+                    value={prompts.execution}
+                    onChange={(e) => setPrompts({ ...prompts, execution: e.target.value })}
+                    className="w-full text-xs font-mono border border-slate-300 bg-slate-50 rounded-xl p-3.5 h-28 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 leading-relaxed"
+                  />
+                </div>
+
+                {/* Forensic Prompts */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full">
+                      5. Forensic Investigator Prompt
+                    </span>
+                  </div>
+                  <textarea
+                    value={prompts.forensic}
+                    onChange={(e) => setPrompts({ ...prompts, forensic: e.target.value })}
+                    className="w-full text-xs font-mono border border-slate-300 bg-slate-50 rounded-xl p-3.5 h-28 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 leading-relaxed"
+                  />
+                </div>
+
+                {/* Curator Prompts */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold px-3 py-1 bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full">
+                      6. Knowledge Curator Prompt
+                    </span>
+                  </div>
+                  <textarea
+                    value={prompts.curator}
+                    onChange={(e) => setPrompts({ ...prompts, curator: e.target.value })}
                     className="w-full text-xs font-mono border border-slate-300 bg-slate-50 rounded-xl p-3.5 h-28 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 leading-relaxed"
                   />
                 </div>

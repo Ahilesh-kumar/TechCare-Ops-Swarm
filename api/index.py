@@ -55,6 +55,9 @@ class PromptsPayload(BaseModel):
     coordinator: str
     analyst: str
     auditor: str
+    execution: str
+    forensic: str
+    curator: str
 
 # Helper: Save history record
 async def save_history_record(alert_text, equipment, status, latency, logs, report):
@@ -90,30 +93,46 @@ def parse_prompts():
     coordinator = ""
     analyst = ""
     auditor = ""
+    execution = ""
+    forensic = ""
+    curator = ""
     
     if os.path.exists(PROMPTS_PATH):
         try:
             with open(PROMPTS_PATH, "r", encoding="utf-8") as f:
                 content = f.read()
             
-            parts = content.split("## 2. Systems Analyst Agent")
-            if len(parts) > 1:
-                coordinator = parts[0].replace("# Swarm Agent Definitions & Rules", "").replace("## 1. Coordinator Agent", "").strip()
-                analyst_and_auditor = parts[1].split("## 3. Safety Auditor Agent")
-                if len(analyst_and_auditor) > 1:
-                    analyst = analyst_and_auditor[0].strip()
-                    auditor = analyst_and_auditor[1].strip()
+            # Helper to split text by header markers
+            def get_section(text, current_header, next_header=None):
+                if current_header not in text:
+                    return ""
+                part = text.split(current_header, 1)[1]
+                if next_header and next_header in part:
+                    part = part.split(next_header, 1)[0]
+                return part.strip()
+
+            coordinator = get_section(content, "## 1. Coordinator Agent", "## 2. Systems Analyst Agent")
+            # Clean up top header in coordinator part if present
+            coordinator = coordinator.replace("# Swarm Agent Definitions & Rules", "").strip()
+            analyst = get_section(content, "## 2. Systems Analyst Agent", "## 3. Safety Auditor Agent")
+            auditor = get_section(content, "## 3. Safety Auditor Agent", "## 4. Execution Agent")
+            execution = get_section(content, "## 4. Execution Agent", "## 5. Forensic Investigator Agent")
+            forensic = get_section(content, "## 5. Forensic Investigator Agent", "## 6. Knowledge Curator Agent")
+            curator = get_section(content, "## 6. Knowledge Curator Agent")
         except Exception as e:
             print(f"Error parsing prompts: {e}")
             
     return {
         "coordinator": coordinator,
         "analyst": analyst,
-        "auditor": auditor
+        "auditor": auditor,
+        "execution": execution,
+        "forensic": forensic,
+        "curator": curator
     }
 
 # Helper: Save prompt rules
-def save_prompts(coordinator, analyst, auditor):
+def save_prompts(coordinator, analyst, auditor, execution, forensic, curator):
     try:
         content = (
             "# Swarm Agent Definitions & Rules\n\n"
@@ -122,7 +141,13 @@ def save_prompts(coordinator, analyst, auditor):
             "## 2. Systems Analyst Agent\n"
             f"{analyst}\n\n"
             "## 3. Safety Auditor Agent\n"
-            f"{auditor}\n"
+            f"{auditor}\n\n"
+            "## 4. Execution Agent\n"
+            f"{execution}\n\n"
+            "## 5. Forensic Investigator Agent\n"
+            f"{forensic}\n\n"
+            "## 6. Knowledge Curator Agent\n"
+            f"{curator}\n"
         )
         with open(PROMPTS_PATH, "w", encoding="utf-8") as f:
             f.write(content)
@@ -264,7 +289,14 @@ async def get_prompts():
 
 @app.post("/api/prompts")
 async def post_prompts(payload: PromptsPayload):
-    success = save_prompts(payload.coordinator, payload.analyst, payload.auditor)
+    success = save_prompts(
+        payload.coordinator,
+        payload.analyst,
+        payload.auditor,
+        payload.execution,
+        payload.forensic,
+        payload.curator
+    )
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save prompts")
     return {"status": "ok"}

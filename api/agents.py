@@ -923,6 +923,378 @@ def create_auditor_agent(agent_id: str, api_key: str) -> Agent:
         api_key=api_key
     )
 
+class ExecutionAdapter(SimpleAdapter[list]):
+    """
+    Execution Agent - Automated Systems Operator.
+    Receives approved plans (INCIDENT_REPORT), simulates/runs containment actions,
+    and forwards status to the Forensic Investigator.
+    """
+    SUPPORTED_EMIT = frozenset()
+    SUPPORTED_CAPABILITIES = frozenset()
+
+    def __init__(self, forensic_id: str = "forensic_investigator"):
+        super().__init__()
+        self.forensic_id = forensic_id
+        self.system_prompt = self._load_system_prompt()
+
+    def _load_system_prompt(self) -> str:
+        rules_path = os.path.join(os.path.dirname(__file__), "prompt_rules.md")
+        if os.path.exists(rules_path):
+            try:
+                with open(rules_path, "r") as f:
+                    content = f.read()
+                parts = content.split("## 4. Execution Agent")
+                if len(parts) > 1:
+                    return parts[1].split("## 5. Forensic Investigator Agent")[0].strip()
+            except Exception as e:
+                logger.error(f"Error loading prompt_rules.md: {e}")
+        return (
+            "Role: Automated Systems Operator.\n"
+            "Task: Receive the approved INCIDENT_REPORT from the Safety Auditor. Execute the containment actions specified in the report."
+        )
+
+    async def on_message(
+        self,
+        msg: PlatformMessage,
+        tools: AgentToolsProtocol,
+        history: list,
+        participants_msg: str | None,
+        contacts_msg: str | None,
+        *,
+        is_session_bootstrap: bool,
+        room_id: str,
+    ) -> None:
+        if msg.sender_type == "agent" and msg.sender_id == getattr(self, "_band_agent_id", None):
+            return
+
+        if "INCIDENT_REPORT:" not in msg.content:
+            return
+
+        logger.info(f"Execution Agent received incident report.")
+        report_text = msg.content.split("INCIDENT_REPORT:", 1)[1].strip()
+
+        equipment_name = "Unknown Equipment"
+        for m in _get_history_list(history):
+            if "INCIDENT_ALERT:" in m.content:
+                try:
+                    payload = json.loads(m.content.split("INCIDENT_ALERT:", 1)[1].strip())
+                    equipment_name = payload.get("equipment", "Unknown Equipment")
+                    break
+                except Exception:
+                    pass
+
+        execution_log = await self._execute_containment(equipment_name, report_text)
+
+        try:
+            await tools.add_participant(self.forensic_id)
+        except Exception as e:
+            logger.warning(f"Failed to add participant {self.forensic_id}: {e}")
+
+        await tools.send_message(
+            content=f"EXECUTION_STATUS:\n{execution_log}",
+            mentions=[self.forensic_id]
+        )
+
+    async def _execute_containment(self, equipment_name: str, report_text: str) -> str:
+        from api.mock_database import ENTERPRISE_KNOWLEDGE_BASE
+        spec = ENTERPRISE_KNOWLEDGE_BASE.get(equipment_name, "")
+        
+        prompt = (
+            f"{self.system_prompt}\n\n"
+            f"Equipment: {equipment_name}\n"
+            f"Approved Plan:\n{report_text}\n"
+            f"Database Specification:\n{spec}\n\n"
+            "Simulate executing each containment action step. Mention that the operations are run successfully on the mock actuators. "
+            "Confirm the telemetry has restabilized. Output a structured execution log prefixed with 'EXECUTION_STATUS:' showing steps, success, and observations."
+        )
+        
+        if not groq_client:
+            return (
+                f"EQUIPMENT: {equipment_name}\n"
+                "STATUS: SUCCESS\n"
+                "LOGS:\n"
+                "- [ACTION 1] Auxiliary loop bypass valves opened to 100%.\n"
+                "- [ACTION 2] CPU throttling commanded to de-energize state.\n"
+                "- [TELEMETRY] Telemetry parameters verified within safe operating boundaries."
+            )
+        
+        try:
+            chat_completion = await groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are an Automated Systems Operator. Generate the execution logs based on the approved report and DB specifications."},
+                    {"role": "user", "content": prompt}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.0
+            )
+            content = chat_completion.choices[0].message.content
+            if "EXECUTION_STATUS:" in content:
+                return content.split("EXECUTION_STATUS:", 1)[1].strip()
+            return content.strip()
+        except Exception as e:
+            logger.error(f"Error generating execution logs: {e}")
+            return f"EQUIPMENT: {equipment_name}\nSTATUS: SUCCESS\nLOGS: Default simulation ran successfully."
+
+class ForensicAdapter(SimpleAdapter[list]):
+    """
+    Forensic Investigator Agent - Root Cause Analyst.
+    Runs after execution, reviews incident logs, and performs Root Cause Analysis.
+    """
+    SUPPORTED_EMIT = frozenset()
+    SUPPORTED_CAPABILITIES = frozenset()
+
+    def __init__(self, curator_id: str = "knowledge_curator"):
+        super().__init__()
+        self.curator_id = curator_id
+        self.system_prompt = self._load_system_prompt()
+
+    def _load_system_prompt(self) -> str:
+        rules_path = os.path.join(os.path.dirname(__file__), "prompt_rules.md")
+        if os.path.exists(rules_path):
+            try:
+                with open(rules_path, "r") as f:
+                    content = f.read()
+                parts = content.split("## 5. Forensic Investigator Agent")
+                if len(parts) > 1:
+                    return parts[1].split("## 6. Knowledge Curator Agent")[0].strip()
+            except Exception as e:
+                logger.error(f"Error loading prompt_rules.md: {e}")
+        return (
+            "Role: Root Cause Analyst.\n"
+            "Task: Review the execution status and incident history, then output a detailed Root Cause Analysis (RCA) report."
+        )
+
+    async def on_message(
+        self,
+        msg: PlatformMessage,
+        tools: AgentToolsProtocol,
+        history: list,
+        participants_msg: str | None,
+        contacts_msg: str | None,
+        *,
+        is_session_bootstrap: bool,
+        room_id: str,
+    ) -> None:
+        if msg.sender_type == "agent" and msg.sender_id == getattr(self, "_band_agent_id", None):
+            return
+
+        if "EXECUTION_STATUS:" not in msg.content:
+            return
+
+        logger.info(f"Forensic Agent received execution status.")
+        execution_status = msg.content.split("EXECUTION_STATUS:", 1)[1].strip()
+
+        room_history_text = ""
+        for m in _get_history_list(history):
+            sender = m.sender_id or m.sender_type or "Agent"
+            room_history_text += f"{sender}: {m.content}\n\n"
+
+        rca_report = await self._perform_investigation(room_history_text, execution_status)
+
+        try:
+            await tools.add_participant(self.curator_id)
+        except Exception as e:
+            logger.warning(f"Failed to add participant {self.curator_id}: {e}")
+
+        await tools.send_message(
+            content=f"FORENSIC_REPORT:\n{rca_report}",
+            mentions=[self.curator_id]
+        )
+
+    async def _perform_investigation(self, room_history: str, execution_status: str) -> str:
+        prompt = (
+            f"{self.system_prompt}\n\n"
+            f"--- SWARM CHAT HISTORY ---\n"
+            f"{room_history}\n"
+            f"---------------------------\n\n"
+            f"--- EXECUTION STATUS ---\n"
+            f"{execution_status}\n"
+            f"------------------------\n\n"
+            "Analyze the event timeline, technical proposal, safety review, and execution logs. "
+            "Output a detailed Root Cause Analysis (RCA) report using these exact headers:\n"
+            "- **INCIDENT TIMELINE:**\n"
+            "- **ROOT CAUSE ANALYSIS:**\n"
+            "- **CONTAINMENT VERIFICATION:**\n"
+            "- **LONG-TERM PREVENTATIVE ACTIONS:**\n"
+            "- **FORENSIC SIGN-OFF:**\n"
+            "Do not include the prefix 'FORENSIC_REPORT:' in the completion body."
+        )
+
+        if not groq_client:
+            return (
+                "**INCIDENT TIMELINE:**\n"
+                "- 13:20:00: Critical alert triggered.\n"
+                "- 13:20:05: Swarm activated; Systems Analyst proposed coolant loop valves.\n"
+                "- 13:20:08: Safety Auditor approved plan.\n"
+                "- 13:20:10: Execution Agent successfully ran containment.\n\n"
+                "**ROOT CAUSE ANALYSIS:**\n"
+                "Localized high load and mechanical fatigue in secondary components led to excessive thermal/pressure dissipation failure.\n\n"
+                "**CONTAINMENT VERIFICATION:**\n"
+                "Coolant bypass valve at 100% flow successfully reduced telemetry values to safe parameters.\n\n"
+                "**LONG-TERM PREVENTATIVE ACTIONS:**\n"
+                "1. Inspect fan motors and valve actuators every 30 days.\n"
+                "2. Adjust safety trigger warning threshold in the knowledge base.\n\n"
+                "**FORENSIC SIGN-OFF:**\n"
+                "Signed off by Lead Forensic Investigator."
+            )
+
+        try:
+            chat_completion = await groq_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are a Forensic Investigator and Root Cause Analyst. Output a clean markdown report strictly using the required headers."},
+                    {"role": "user", "content": prompt}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.0
+            )
+            content = chat_completion.choices[0].message.content
+            if "FORENSIC_REPORT:" in content:
+                return content.split("FORENSIC_REPORT:", 1)[1].strip()
+            return content.strip()
+        except Exception as e:
+            logger.error(f"Error generating Forensic RCA report: {e}")
+            return "**INCIDENT TIMELINE:** Failed to generate timeline.\n**ROOT CAUSE ANALYSIS:** Error in LLM call."
+
+class KnowledgeCuratorAdapter(SimpleAdapter[list]):
+    """
+    Knowledge Curator Agent - Feedback & Learning Agent.
+    Updates the enterprise knowledge base based on post-incident forensic findings.
+    """
+    SUPPORTED_EMIT = frozenset()
+    SUPPORTED_CAPABILITIES = frozenset()
+
+    def __init__(self):
+        super().__init__()
+        self.system_prompt = self._load_system_prompt()
+
+    def _load_system_prompt(self) -> str:
+        rules_path = os.path.join(os.path.dirname(__file__), "prompt_rules.md")
+        if os.path.exists(rules_path):
+            try:
+                with open(rules_path, "r") as f:
+                    content = f.read()
+                parts = content.split("## 6. Knowledge Curator Agent")
+                if len(parts) > 1:
+                    return parts[1].strip()
+            except Exception as e:
+                logger.error(f"Error loading prompt_rules.md: {e}")
+        return (
+            "Role: Feedback & Learning Agent.\n"
+            "Task: Receive the FORENSIC_REPORT, analyze the RCA, and dynamically optimize the ENTERPRISE_KNOWLEDGE_BASE rules."
+        )
+
+    async def on_message(
+        self,
+        msg: PlatformMessage,
+        tools: AgentToolsProtocol,
+        history: list,
+        participants_msg: str | None,
+        contacts_msg: str | None,
+        *,
+        is_session_bootstrap: bool,
+        room_id: str,
+    ) -> None:
+        if msg.sender_type == "agent" and msg.sender_id == getattr(self, "_band_agent_id", None):
+            return
+
+        if "FORENSIC_REPORT:" not in msg.content:
+            return
+
+        logger.info(f"Knowledge Curator Agent received forensic report.")
+        forensic_report = msg.content.split("FORENSIC_REPORT:", 1)[1].strip()
+
+        equipment_name = "Unknown Equipment"
+        for m in _get_history_list(history):
+            if "INCIDENT_ALERT:" in m.content:
+                try:
+                    payload = json.loads(m.content.split("INCIDENT_ALERT:", 1)[1].strip())
+                    equipment_name = payload.get("equipment", "Unknown Equipment")
+                    break
+                except Exception:
+                    pass
+
+        learning_summary = await self._curate_knowledge_base(equipment_name, forensic_report)
+
+        await tools.send_message(
+            content=f"LEARNING_SUMMARY:\n{learning_summary}"
+        )
+
+    async def _curate_knowledge_base(self, equipment_name: str, forensic_report: str) -> str:
+        from api.mock_database import ENTERPRISE_KNOWLEDGE_BASE
+        spec_before = ENTERPRISE_KNOWLEDGE_BASE.get(equipment_name, "None")
+
+        prompt = (
+            f"{self.system_prompt}\n\n"
+            f"Equipment: {equipment_name}\n"
+            f"Current Database Entry:\n{spec_before}\n\n"
+            f"Forensic RCA Report:\n{forensic_report}\n\n"
+            "Analyze the Forensic report. You must propose an optimized database entry for this equipment in the dynamic knowledge base. "
+            "For example, you might add a caution warning, update isolation steps, or note the corrective actions recommended by the Forensic Investigator. "
+            "Return a JSON object in this exact format:\n"
+            "{\n"
+            "  \"optimized_spec\": \"Full optimized specification string (including previous guidelines but adding new preventative actions/safeguards)\",\n"
+            "  \"changes_made\": \"Short description of the modifications/learnings added\"\n"
+            "}\n"
+            "Do not include the prefix 'LEARNING_SUMMARY:' in the completion body."
+        )
+
+        optimized_spec = spec_before
+        changes_made = "No changes required."
+
+        if groq_client:
+            try:
+                chat_completion = await groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": "You are a Feedback & Learning Agent. You must output JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    model="llama-3.3-70b-versatile",
+                    response_format={"type": "json_object"},
+                    temperature=0.0
+                )
+                res_json = json.loads(chat_completion.choices[0].message.content)
+                optimized_spec = res_json.get("optimized_spec", spec_before)
+                changes_made = res_json.get("changes_made", "Optimized threshold warnings and safety guidelines.")
+                
+                ENTERPRISE_KNOWLEDGE_BASE.update_spec(equipment_name, optimized_spec)
+            except Exception as e:
+                logger.error(f"Error in Knowledge Curator LLM / DB write: {e}")
+        else:
+            optimized_spec = spec_before + "\n\n[PREVENTATIVE SAFEGUARD ADDED BY SWARM]: Inspect fan motor and valve seals every 30 days."
+            changes_made = "Added recommendation for 30-day preventative maintenance cycle."
+            ENTERPRISE_KNOWLEDGE_BASE.update_spec(equipment_name, optimized_spec)
+
+        return (
+            f"### LEARNING OUTCOME FOR {equipment_name.upper()}\n"
+            f"**Database Action:** Dynamic Knowledge Base updated.\n"
+            f"**Learnings Incorporated:** {changes_made}\n\n"
+            f"**Updated Specification:**\n```\n{optimized_spec}\n```"
+        )
+
+def create_execution_agent(agent_id: str, api_key: str, forensic_id: str = "forensic_investigator") -> Agent:
+    adapter = ExecutionAdapter(forensic_id=forensic_id)
+    return Agent.create(
+        adapter=adapter,
+        agent_id=agent_id,
+        api_key=api_key
+    )
+
+def create_forensic_agent(agent_id: str, api_key: str, curator_id: str = "knowledge_curator") -> Agent:
+    adapter = ForensicAdapter(curator_id=curator_id)
+    return Agent.create(
+        adapter=adapter,
+        agent_id=agent_id,
+        api_key=api_key
+    )
+
+def create_curator_agent(agent_id: str, api_key: str) -> Agent:
+    adapter = KnowledgeCuratorAdapter()
+    return Agent.create(
+        adapter=adapter,
+        agent_id=agent_id,
+        api_key=api_key
+    )
+
 # --- Multi-Agent Swarm Orchestrator ---
 
 async def trigger_incident_async(alert_text: str, status_callback=None, delay: float = 0.1, live_mode: bool = True) -> str:
@@ -935,7 +1307,7 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
     1. Create an incident room
     2. Add the Systems Analyst as a participant
     3. Send the raw alert text to trigger the swarm chain
-    4. Poll messages until the final INCIDENT_REPORT appears
+    4. Poll messages until the final LEARNING_SUMMARY appears
     """
     import time
     import httpx
@@ -944,6 +1316,13 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
     coordinator_token = os.environ.get("BAND_COORDINATOR_TOKEN")
     analyst_id = os.environ.get("BAND_ANALYST_ID", "systems_analyst")
     auditor_id = os.environ.get("BAND_AUDITOR_ID", "safety_auditor")
+    execution_id = os.environ.get("BAND_EXECUTION_ID", "execution_agent")
+    forensic_id = os.environ.get("BAND_FORENSIC_ID", "forensic_investigator")
+    curator_id = os.environ.get("BAND_CURATOR_ID", "knowledge_curator")
+
+    execution_token = os.environ.get("BAND_EXECUTION_TOKEN")
+    forensic_token = os.environ.get("BAND_FORENSIC_TOKEN")
+    curator_token = os.environ.get("BAND_CURATOR_TOKEN")
 
     is_real_band = bool(coordinator_token) and live_mode
 
@@ -951,6 +1330,9 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
     coordinator = CoordinatorAdapter(analyst_id=analyst_id)
     analyst = SystemsAnalystAdapter(auditor_id=auditor_id)
     auditor = SafetyAuditorAdapter()
+    executor = ExecutionAdapter(forensic_id=forensic_id)
+    forensic = ForensicAdapter(curator_id=curator_id)
+    curator = KnowledgeCuratorAdapter()
 
     # Step 1: Coordinator parses alert
     if status_callback:
@@ -999,9 +1381,6 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                     await asyncio.sleep(delay)
                     
                 # 3. Send the raw alert text as a message to trigger the Coordinator's on_message handler
-                #    The background Coordinator agent will receive this via WebSocket and:
-                #    - Identify equipment, create a sub-room, add analyst, forward structured alert
-                #    OR we can directly send the structured INCIDENT_ALERT to the Analyst
                 alert_payload = json.dumps({
                     "equipment": equipment_name,
                     "raw_alert": alert_text
@@ -1024,15 +1403,19 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                     await asyncio.sleep(delay)
                     
                 # 4. Poll messages in the incident room for the full swarm chain
-                report = None
                 seen_messages = {alert_msg_id}
                 start_time = time.time()
-                timeout = 180.0  # 3 minutes timeout
+                timeout = 240.0  # 4 minutes timeout for 6-agent execution chain
                 
                 analyst_token = os.environ.get("BAND_ANALYST_TOKEN")
                 auditor_token = os.environ.get("BAND_AUDITOR_TOKEN")
                 
-                # We'll poll using Coordinator, Analyst, and Auditor tokens to see messages sent to/by them
+                safety_report = ""
+                execution_log = ""
+                forensic_report = ""
+                learning_summary = ""
+                
+                # We'll poll using all agent tokens to ensure visibility of room messages
                 poll_configs = []
                 if coordinator_token:
                     poll_configs.append({"name": "Coordinator", "headers": {"x-api-key": coordinator_token}})
@@ -1040,6 +1423,12 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                     poll_configs.append({"name": "Analyst", "headers": {"x-api-key": analyst_token}})
                 if auditor_token:
                     poll_configs.append({"name": "Auditor", "headers": {"x-api-key": auditor_token}})
+                if execution_token:
+                    poll_configs.append({"name": "Execution", "headers": {"x-api-key": execution_token}})
+                if forensic_token:
+                    poll_configs.append({"name": "Forensic", "headers": {"x-api-key": forensic_token}})
+                if curator_token:
+                    poll_configs.append({"name": "Curator", "headers": {"x-api-key": curator_token}})
                 
                 while time.time() - start_time < timeout:
                     try:
@@ -1049,7 +1438,6 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                                 headers=config["headers"],
                                 params={"page": 1, "page_size": 50, "status": "all"}
                             )
-                            # Skip if this specific token fails to retrieve
                             if msgs_resp.status_code != 200:
                                 continue
                             
@@ -1085,28 +1473,60 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                                         await status_callback("Systems Analyst Agent", "Revising resolution based on safety audit feedback...")
                                         
                                 elif "INCIDENT_REPORT:" in content:
-                                    report = content.split("INCIDENT_REPORT:", 1)[1].strip()
+                                    safety_report = content.split("INCIDENT_REPORT:", 1)[1].strip()
                                     if status_callback:
-                                        await status_callback("Safety Auditor Agent", "Safety audit approved! Finalized incident report.")
+                                        await status_callback("Safety Auditor Agent", "Safety audit approved! Finalized incident report. Requesting Execution Agent...")
+                                
+                                elif "EXECUTION_STATUS:" in content:
+                                    execution_log = content.split("EXECUTION_STATUS:", 1)[1].strip()
+                                    if status_callback:
+                                        await status_callback("Execution Agent", f"Execution complete. Status: SUCCESS.\n{execution_log[:500]}...")
+                                
+                                elif "FORENSIC_REPORT:" in content:
+                                    forensic_report = content.split("FORENSIC_REPORT:", 1)[1].strip()
+                                    if status_callback:
+                                        await status_callback("Forensic Investigator Agent", "Forensic analysis completed! RCA Report generated.")
+                                
+                                elif "LEARNING_SUMMARY:" in content:
+                                    learning_summary = content.split("LEARNING_SUMMARY:", 1)[1].strip()
+                                    if status_callback:
+                                        await status_callback("Knowledge Curator Agent", "Enterprise knowledge base curated with new learnings.")
                                     break
                             
-                            if report:
+                            if learning_summary:
                                 break
                                 
-                        if report:
+                        if learning_summary:
                             break
                     except Exception as poll_err:
                         logger.error(f"Error polling room messages: {poll_err}")
                     await asyncio.sleep(3.0)
                     
-                if not report:
-                    # Provide a helpful timeout message
+                if not safety_report and not learning_summary:
                     elapsed = int(time.time() - start_time)
                     raise TimeoutError(
                         f"Swarm coordination timed out after {elapsed}s. "
-                        f"Saw {len(seen_messages)} messages but no INCIDENT_REPORT. "
+                        f"Saw {len(seen_messages)} messages but no reports. "
                         "Ensure 'run_agents.py' is running and agents are ONLINE."
                     )
+                
+                # Build combined response
+                if learning_summary:
+                    report = (
+                        f"# 🛡️ TechCare Swarm Final Incident Summary\n\n"
+                        f"{safety_report}\n\n"
+                        f"---\n\n"
+                        f"# ⚙️ Execution Log & System Containment Status\n\n"
+                        f"```\n{execution_log}\n```\n\n"
+                        f"---\n\n"
+                        f"# 🔍 Root Cause Analysis & Forensic Report\n\n"
+                        f"{forensic_report}\n\n"
+                        f"---\n\n"
+                        f"# 🧠 Knowledge Curator Self-Learning Update\n\n"
+                        f"{learning_summary}"
+                    )
+                else:
+                    report = safety_report
                     
         except httpx.HTTPStatusError as e:
             logger.error(f"Band.ai API error: {e.response.status_code} - {e.response.text}")
@@ -1212,7 +1632,62 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
             await status_callback("Safety Auditor Agent", "Finalizing official incident report. Compliance sign-off complete.")
             await asyncio.sleep(delay)
 
-        return report
+        # Step 4: Execution Agent Executes Approved Plan
+        if status_callback:
+            await status_callback("Execution Agent", "Approved plan received. Triggering automated system containment sequence...")
+            await asyncio.sleep(delay)
+
+        execution_log = await executor._execute_containment(equipment_name, report)
+
+        if status_callback:
+            await status_callback("Execution Agent", f"Execution complete. Status: SUCCESS.\n{execution_log}")
+            await asyncio.sleep(delay)
+
+        # Step 5: Forensic Investigator Agent Performs Root Cause Analysis
+        if status_callback:
+            await status_callback("Forensic Investigator Agent", "Execution logs received. Commencing forensic timeline analysis and root cause investigation...")
+            await asyncio.sleep(delay)
+
+        # Mock room history for offline analysis
+        simulated_history = (
+            f"Coordinator Agent: INCIDENT_ALERT: for {equipment_name}\n\n"
+            f"Systems Analyst Agent: TECHNICAL_RESOLUTION proposed.\n\n"
+            f"Safety Auditor Agent: Approved INCIDENT_REPORT generated.\n\n"
+            f"Execution Agent: EXECUTION_STATUS log submitted."
+        )
+        forensic_report = await forensic._perform_investigation(simulated_history, execution_log)
+
+        if status_callback:
+            await status_callback("Forensic Investigator Agent", "RCA Report finalized. Handing over to Knowledge Curator for self-learning DB optimization...")
+            await asyncio.sleep(delay)
+
+        # Step 6: Knowledge Curator Agent optimizes DB
+        if status_callback:
+            await status_callback("Knowledge Curator Agent", "Analyzing forensic report to curate and optimize enterprise blueprints...")
+            await asyncio.sleep(delay)
+
+        learning_summary = await curator._curate_knowledge_base(equipment_name, forensic_report)
+
+        if status_callback:
+            await status_callback("Knowledge Curator Agent", "Curation complete. Enterprise blueprints updated successfully.")
+            await asyncio.sleep(delay)
+
+        # Combine reports for the user
+        combined_report = (
+            f"# 🛡️ TechCare Swarm Final Incident Summary\n\n"
+            f"{report}\n\n"
+            f"---\n\n"
+            f"# ⚙️ Execution Log & System Containment Status\n\n"
+            f"```\n{execution_log}\n```\n\n"
+            f"---\n\n"
+            f"# 🔍 Root Cause Analysis & Forensic Report\n\n"
+            f"{forensic_report}\n\n"
+            f"---\n\n"
+            f"# 🧠 Knowledge Curator Self-Learning Update\n\n"
+            f"{learning_summary}"
+        )
+
+        return combined_report
 
 def trigger_incident(alert_text: str, status_callback=None, delay: float = 0.1, live_mode: bool = True) -> str:
     """

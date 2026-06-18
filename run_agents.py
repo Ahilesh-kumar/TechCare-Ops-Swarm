@@ -8,9 +8,15 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from api.agents import create_coordinator_agent, create_analyst_agent, create_auditor_agent
+    from api.agents import (
+        create_coordinator_agent, create_analyst_agent, create_auditor_agent,
+        create_execution_agent, create_forensic_agent, create_curator_agent
+    )
 except ImportError:
-    from agents import create_coordinator_agent, create_analyst_agent, create_auditor_agent
+    from agents import (
+        create_coordinator_agent, create_analyst_agent, create_auditor_agent,
+        create_execution_agent, create_forensic_agent, create_curator_agent
+    )
 
 # Enable logging
 logging.basicConfig(
@@ -60,11 +66,17 @@ async def main():
     coordinator_id = os.environ.get("BAND_COORDINATOR_ID")
     analyst_id = os.environ.get("BAND_ANALYST_ID")
     auditor_id = os.environ.get("BAND_AUDITOR_ID")
+    execution_id = os.environ.get("BAND_EXECUTION_ID")
+    forensic_id = os.environ.get("BAND_FORENSIC_ID")
+    curator_id = os.environ.get("BAND_CURATOR_ID")
 
     # Load Agent Secret Tokens
     coordinator_token = os.environ.get("BAND_COORDINATOR_TOKEN")
     analyst_token = os.environ.get("BAND_ANALYST_TOKEN")
     auditor_token = os.environ.get("BAND_AUDITOR_TOKEN")
+    execution_token = os.environ.get("BAND_EXECUTION_TOKEN")
+    forensic_token = os.environ.get("BAND_FORENSIC_TOKEN")
+    curator_token = os.environ.get("BAND_CURATOR_TOKEN")
 
     print("=" * 60)
     print("      BAND.AI PERSISTENT BACKGROUND AGENTS RUNNER")
@@ -79,7 +91,7 @@ async def main():
         missing_vars.append("BAND_AUDITOR_ID / BAND_AUDITOR_TOKEN")
 
     if missing_vars:
-        print("\n❌ Error: Missing Agent credentials in your .env file.")
+        print("\n❌ Error: Missing mandatory Agent credentials in your .env file.")
         print("Please ensure the following variables are configured:")
         for var in missing_vars:
             print(f"  - {var}")
@@ -98,32 +110,76 @@ async def main():
     print(f"  - Coordinator: {coordinator_id}")
     print(f"  - Systems Analyst: {analyst_id}")
     print(f"  - Safety Auditor: {auditor_id}")
+
+    tasks = [
+        run_agent_with_retry(
+            "Coordinator", 
+            create_coordinator_agent, 
+            agent_id=coordinator_id, 
+            api_key=coordinator_token, 
+            analyst_id=analyst_id
+        ),
+        run_agent_with_retry(
+            "Systems Analyst", 
+            create_analyst_agent, 
+            agent_id=analyst_id, 
+            api_key=analyst_token, 
+            auditor_id=auditor_id
+        ),
+        run_agent_with_retry(
+            "Safety Auditor", 
+            create_auditor_agent, 
+            agent_id=auditor_id, 
+            api_key=auditor_token
+        )
+    ]
+
+    if execution_id and execution_token:
+        print(f"  - Execution Agent: {execution_id}")
+        tasks.append(
+            run_agent_with_retry(
+                "Execution Agent",
+                create_execution_agent,
+                agent_id=execution_id,
+                api_key=execution_token,
+                forensic_id=forensic_id
+            )
+        )
+    else:
+        print("  - Execution Agent: [SKIPPED - not configured in .env]")
+
+    if forensic_id and forensic_token:
+        print(f"  - Forensic Investigator: {forensic_id}")
+        tasks.append(
+            run_agent_with_retry(
+                "Forensic Agent",
+                create_forensic_agent,
+                agent_id=forensic_id,
+                api_key=forensic_token,
+                curator_id=curator_id
+            )
+        )
+    else:
+        print("  - Forensic Investigator: [SKIPPED - not configured in .env]")
+
+    if curator_id and curator_token:
+        print(f"  - Knowledge Curator: {curator_id}")
+        tasks.append(
+            run_agent_with_retry(
+                "Knowledge Curator Agent",
+                create_curator_agent,
+                agent_id=curator_id,
+                api_key=curator_token
+            )
+        )
+    else:
+        print("  - Knowledge Curator: [SKIPPED - not configured in .env]")
+
     print("-" * 60)
 
     try:
-        # Spawn tasks for all three agents concurrently
-        await asyncio.gather(
-            run_agent_with_retry(
-                "Coordinator", 
-                create_coordinator_agent, 
-                agent_id=coordinator_id, 
-                api_key=coordinator_token, 
-                analyst_id=analyst_id
-            ),
-            run_agent_with_retry(
-                "Systems Analyst", 
-                create_analyst_agent, 
-                agent_id=analyst_id, 
-                api_key=analyst_token, 
-                auditor_id=auditor_id
-            ),
-            run_agent_with_retry(
-                "Safety Auditor", 
-                create_auditor_agent, 
-                agent_id=auditor_id, 
-                api_key=auditor_token
-            )
-        )
+        # Spawn configured agent tasks concurrently
+        await asyncio.gather(*tasks)
     except KeyboardInterrupt:
         print("\nStopping background agents...")
     except Exception as e:
