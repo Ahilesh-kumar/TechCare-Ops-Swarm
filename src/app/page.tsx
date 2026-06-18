@@ -435,7 +435,9 @@ export default function Home() {
 
   // Scroll to bottom of logs when they update
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (safeGuardLogs.length > 0) {
+      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [safeGuardLogs]);
 
   // Handle timer for SafeGuard execution duration
