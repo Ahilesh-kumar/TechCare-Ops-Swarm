@@ -22,6 +22,86 @@ logger = logging.getLogger("TechCareSwarm")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+class MessageWrapper:
+    def __init__(self, content: str, sender_id: str = "", sender_type: str = ""):
+        self.content = content
+        self.sender_id = sender_id
+        self.sender_type = sender_type
+
+def _get_history_list(history) -> list:
+    """
+    Safely extracts a list of message-like objects having a .content attribute.
+    Handles HistoryProvider, raw list of dicts, and list of PlatformMessage.
+    """
+    if history is None:
+        return []
+    
+    raw_items = []
+    if hasattr(history, "raw"):
+        raw_items = history.raw
+    elif isinstance(history, list):
+        raw_items = history
+    else:
+        try:
+            raw_items = list(history)
+        except Exception:
+            return []
+
+    res = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            content = item.get("content", "")
+            sender_id = item.get("sender_id", "")
+            sender_type = item.get("sender_type", "")
+            res.append(MessageWrapper(content, sender_id, sender_type))
+        elif hasattr(item, "content"):
+            res.append(item)
+    return res
+
+def parse_technical_resolution(content: str):
+    equipment = "Unknown Equipment"
+    alert = ""
+    resolution = content
+    
+    if "EQUIPMENT:" in content:
+        try:
+            parts = content.split("EQUIPMENT:", 1)[1].split("\n", 1)
+            equipment = parts[0].strip()
+            rest = parts[1]
+            if "ALERT:" in rest:
+                alert_parts = rest.split("ALERT:", 1)[1].split("\n", 1)
+                alert = alert_parts[0].strip()
+                rest = alert_parts[1]
+            if "---" in rest:
+                resolution = rest.split("---", 1)[1].strip()
+            else:
+                resolution = rest.strip()
+        except Exception:
+            pass
+    return equipment, alert, resolution
+
+def parse_safety_rejection(content: str):
+    equipment = "Unknown Equipment"
+    alert = ""
+    feedback = content
+    
+    if "EQUIPMENT:" in content:
+        try:
+            parts = content.split("EQUIPMENT:", 1)[1].split("\n", 1)
+            equipment = parts[0].strip()
+            rest = parts[1]
+            if "ALERT:" in rest:
+                alert_parts = rest.split("ALERT:", 1)[1].split("\n", 1)
+                alert = alert_parts[0].strip()
+                rest = alert_parts[1]
+            if "---" in rest:
+                feedback = rest.split("---", 1)[1].strip()
+            else:
+                feedback = rest.strip()
+        except Exception:
+            pass
+    return equipment, alert, feedback
+
 class CoordinatorAdapter(SimpleAdapter[list]):
     """
     Coordinator Agent - Operations Desk Manager.
@@ -255,22 +335,10 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         equipment_name = "Unknown Equipment"
         raw_alert = ""
         previous_resolution = ""
+        feedback = ""
 
-        # Scan room history to extract alert payload and previous proposed resolution (if any)
-        for m in history:
-            if "INCIDENT_ALERT:" in m.content:
-                try:
-                    payload_str = m.content.split("INCIDENT_ALERT:", 1)[1].strip()
-                    payload = json.loads(payload_str)
-                    equipment_name = payload.get("equipment", "Unknown Equipment")
-                    raw_alert = payload.get("raw_alert", "")
-                except Exception:
-                    pass
-            elif "TECHNICAL_RESOLUTION:" in m.content:
-                previous_resolution = m.content.split("TECHNICAL_RESOLUTION:", 1)[1].strip()
-
-        # Fallback if history search was empty
-        if not raw_alert and is_alert:
+        # Try to parse details directly from the message payload first
+        if is_alert:
             try:
                 payload_str = msg.content.split("INCIDENT_ALERT:", 1)[1].strip()
                 payload = json.loads(payload_str)
@@ -278,6 +346,25 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
                 raw_alert = payload.get("raw_alert", msg.content)
             except Exception:
                 raw_alert = msg.content
+        elif is_reject:
+            # Parse from key-value structured rejection
+            equipment_name, raw_alert, feedback = parse_safety_rejection(msg.content)
+
+        # Scan room history as fallback or to get previous resolution
+        for m in _get_history_list(history):
+            if "INCIDENT_ALERT:" in m.content:
+                if equipment_name == "Unknown Equipment" or not raw_alert:
+                    try:
+                        payload_str = m.content.split("INCIDENT_ALERT:", 1)[1].strip()
+                        payload = json.loads(payload_str)
+                        equipment_name = payload.get("equipment", "Unknown Equipment")
+                        raw_alert = payload.get("raw_alert", "")
+                    except Exception:
+                        pass
+            elif "TECHNICAL_RESOLUTION:" in m.content:
+                # Parse previous resolution text
+                _, _, prev_res = parse_technical_resolution(m.content)
+                previous_resolution = prev_res
 
         # Look up equipment in database
         from api.mock_database import ENTERPRISE_KNOWLEDGE_BASE
@@ -288,7 +375,6 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
 
         if is_reject:
             # Rejection refinement flow
-            feedback = msg.content.split("SAFETY_AUDIT_REJECT:", 1)[1].strip()
             logger.info(f"Systems Analyst refining resolution for {equipment_name} based on safety audit feedback.")
             resolution_text = await self._generate_revised_resolution(
                 equipment_name, kb_text, raw_alert, previous_resolution, feedback
@@ -304,10 +390,16 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         except Exception as e:
             logger.warning(f"Failed to add participant {self.auditor_id}: {e}")
 
-        # Send resolution back to Safety Auditor
-        prefix = "TECHNICAL_RESOLUTION:"
+        # Send resolution back to Safety Auditor using structured format
+        structured_content = (
+            f"TECHNICAL_RESOLUTION:\n"
+            f"EQUIPMENT: {equipment_name}\n"
+            f"ALERT: {raw_alert}\n"
+            f"---\n"
+            f"{resolution_text}"
+        )
         await tools.send_message(
-            content=f"{prefix} {resolution_text}",
+            content=structured_content,
             mentions=[self.auditor_id]
         )
 
@@ -614,20 +706,21 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
 
         logger.info(f"Safety Auditor received resolution: {msg.content}")
 
-        # 1. Parse resolution
-        resolution_text = msg.content.split("TECHNICAL_RESOLUTION:", 1)[1].strip()
+        # 1. Parse resolution using structured helper
+        equipment_name, raw_alert, resolution_text = parse_technical_resolution(msg.content)
 
-        # 2. Identify equipment by looking at the room history
-        equipment_name = "Unknown Equipment"
-        for m in history:
-            if "INCIDENT_ALERT:" in m.content:
-                try:
-                    payload_str = m.content.split("INCIDENT_ALERT:", 1)[1].strip()
-                    payload = json.loads(payload_str)
-                    equipment_name = payload.get("equipment", "Unknown Equipment")
-                    break
-                except Exception:
-                    pass
+        # 2. Try history scan as fallback for equipment name if parsing failed
+        if equipment_name == "Unknown Equipment":
+            for m in _get_history_list(history):
+                if "INCIDENT_ALERT:" in m.content:
+                    try:
+                        payload_str = m.content.split("INCIDENT_ALERT:", 1)[1].strip()
+                        payload = json.loads(payload_str)
+                        equipment_name = payload.get("equipment", "Unknown Equipment")
+                        raw_alert = payload.get("raw_alert", "")
+                        break
+                    except Exception:
+                        pass
 
         # 3. Look up equipment safety rules in mock database
         from api.mock_database import ENTERPRISE_KNOWLEDGE_BASE
@@ -637,12 +730,19 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
         audit_result = await self._audit_resolution(resolution_text, kb_text)
         
         # Count how many safety rejections have already occurred in the room history
-        rejections_count = sum(1 for m in history if "SAFETY_AUDIT_REJECT:" in m.content)
+        rejections_count = sum(1 for m in _get_history_list(history) if "SAFETY_AUDIT_REJECT:" in m.content)
 
         if not audit_result["safe"] and rejections_count < 3:
             logger.info(f"Safety Auditor rejected resolution (Rejection #{rejections_count + 1})")
+            structured_reject = (
+                f"SAFETY_AUDIT_REJECT:\n"
+                f"EQUIPMENT: {equipment_name}\n"
+                f"ALERT: {raw_alert}\n"
+                f"---\n"
+                f"{audit_result['feedback']}"
+            )
             await tools.send_message(
-                content=f"SAFETY_AUDIT_REJECT: {audit_result['feedback']}",
+                content=structured_reject,
                 mentions=[msg.sender_id]
             )
         else:
@@ -974,14 +1074,14 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
                                         pass
                                         
                                 elif "TECHNICAL_RESOLUTION:" in content:
-                                    resolution_body = content.split("TECHNICAL_RESOLUTION:", 1)[1].strip()
+                                    _, _, clean_res = parse_technical_resolution(content)
                                     if status_callback:
-                                        await status_callback("Systems Analyst Agent", f"Technical resolution generated:\n{resolution_body[:500]}...")
+                                        await status_callback("Systems Analyst Agent", f"Technical resolution generated:\n{clean_res[:500]}...")
                                         
                                 elif "SAFETY_AUDIT_REJECT:" in content:
-                                    reject_body = content.split("SAFETY_AUDIT_REJECT:", 1)[1].strip()
+                                    _, _, clean_feedback = parse_safety_rejection(content)
                                     if status_callback:
-                                        await status_callback("Safety Auditor Agent", f"❌ Safety audit REJECTED: {reject_body[:300]}...")
+                                        await status_callback("Safety Auditor Agent", f"❌ Safety audit REJECTED: {clean_feedback[:300]}...")
                                         await status_callback("Systems Analyst Agent", "Revising resolution based on safety audit feedback...")
                                         
                                 elif "INCIDENT_REPORT:" in content:
