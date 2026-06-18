@@ -532,20 +532,38 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         if tools:
             # Live Band SDK mode chat messaging
             try:
-                await tools.send_message(f"🔍 Unrecognized equipment **'{equipment_name}'**. Checking local manuals...")
+                await tools.send_message(
+                    content=f"🔍 Unrecognized equipment **'{equipment_name}'**. Checking local manuals...",
+                    mentions=[self.auditor_id]
+                )
                 await asyncio.sleep(0.5)
                 if manual_content:
-                    await tools.send_message(f"📄 Found matching manual **'{matched_filename}'** in `/manuals` folder.")
+                    await tools.send_message(
+                        content=f"📄 Found matching manual **'{matched_filename}'** in `/manuals` folder.",
+                        mentions=[self.auditor_id]
+                    )
                     await asyncio.sleep(0.5)
                 else:
-                    await tools.send_message(f"⚠️ No matching manual found in `/manuals`. Using web/LLM fallback.")
+                    await tools.send_message(
+                        content=f"⚠️ No matching manual found in `/manuals`. Using web/LLM fallback.",
+                        mentions=[self.auditor_id]
+                    )
                     await asyncio.sleep(0.5)
                 
-                await tools.send_message(f"⚠️ Safety Policy: Ingesting '{equipment_name}' requires human approval.")
+                await tools.send_message(
+                    content=f"⚠️ Safety Policy: Ingesting '{equipment_name}' requires human approval.",
+                    mentions=[self.auditor_id]
+                )
                 await asyncio.sleep(0.5)
-                await tools.send_message(f"✅ [Bypass / Auto-Auth] Safety Officer authorized ingestion. Committing...")
+                await tools.send_message(
+                    content=f"✅ [Bypass / Auto-Auth] Safety Officer authorized ingestion. Committing...",
+                    mentions=[self.auditor_id]
+                )
                 await asyncio.sleep(0.5)
-                await tools.send_message(f"🧠 Extracting typical safety thresholds and recovery protocols...")
+                await tools.send_message(
+                    content=f"🧠 Extracting typical safety thresholds and recovery protocols...",
+                    mentions=[self.auditor_id]
+                )
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.warning(f"Failed to send status messages in room: {e}")
@@ -627,7 +645,10 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
         
         if tools:
             try:
-                await tools.send_message(f"💾 Auto-committed blueprint for **'{equipment_name}'** to local database:\n\n{spec_content}")
+                await tools.send_message(
+                    content=f"💾 Auto-committed blueprint for **'{equipment_name}'** to local database:\n\n{spec_content}",
+                    mentions=[self.auditor_id]
+                )
                 await asyncio.sleep(0.5)
             except Exception as e:
                 logger.warning(f"Failed to send success message in room: {e}")
@@ -651,8 +672,9 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
     SUPPORTED_EMIT = frozenset()
     SUPPORTED_CAPABILITIES = frozenset()
 
-    def __init__(self):
+    def __init__(self, execution_id: str = "execution_agent"):
         super().__init__()
+        self.execution_id = execution_id
         # Load system instructions from prompt_rules.md or use a fallback
         self.system_prompt = self._load_system_prompt()
 
@@ -746,6 +768,12 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
                 mentions=[msg.sender_id]
             )
         else:
+            # Add Execution Agent participant
+            try:
+                await tools.add_participant(self.execution_id)
+            except Exception as e:
+                logger.warning(f"Failed to add participant {self.execution_id}: {e}")
+
             if not audit_result["safe"]:
                 # Reached rejection limit, proceed but add warning
                 logger.warning(f"Safety Auditor reached maximum rejections ({rejections_count}). Proceeding with warnings.")
@@ -758,13 +786,13 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
                 )
                 await tools.send_message(
                     content=f"INCIDENT_REPORT:\n{warning_report}",
-                    mentions=[msg.sender_id]
+                    mentions=[self.execution_id]
                 )
             else:
                 logger.info("Safety Auditor approved resolution and signed off report.")
                 await tools.send_message(
                     content=f"INCIDENT_REPORT:\n{audit_result['report']}",
-                    mentions=[msg.sender_id]
+                    mentions=[self.execution_id]
                 )
 
     async def _audit_resolution(self, resolution_text: str, kb_text: str) -> dict:
@@ -915,8 +943,8 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
             )
 
 # Factory helper to instantiate the Safety Auditor Agent
-def create_auditor_agent(agent_id: str, api_key: str) -> Agent:
-    adapter = SafetyAuditorAdapter()
+def create_auditor_agent(agent_id: str, api_key: str, execution_id: str = "execution_agent") -> Agent:
+    adapter = SafetyAuditorAdapter(execution_id=execution_id)
     return Agent.create(
         adapter=adapter,
         agent_id=agent_id,
@@ -1216,7 +1244,8 @@ class KnowledgeCuratorAdapter(SimpleAdapter[list]):
         learning_summary = await self._curate_knowledge_base(equipment_name, forensic_report)
 
         await tools.send_message(
-            content=f"LEARNING_SUMMARY:\n{learning_summary}"
+            content=f"LEARNING_SUMMARY:\n{learning_summary}",
+            mentions=[msg.sender_id]
         )
 
     async def _curate_knowledge_base(self, equipment_name: str, forensic_report: str) -> str:

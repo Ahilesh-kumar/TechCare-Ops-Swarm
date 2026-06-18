@@ -130,7 +130,8 @@ async def main():
             "Safety Auditor", 
             create_auditor_agent, 
             agent_id=auditor_id, 
-            api_key=auditor_token
+            api_key=auditor_token,
+            execution_id=execution_id or "execution_agent"
         )
     ]
 
