@@ -53,7 +53,7 @@ If the resolution is fully safe and compliant:
 {
   "safe": true,
   "feedback": "",
-  "report": "Finalized incident report formatted as a professional Markdown document using these exact headers:\n- **EXECUTIVE SUMMARY:** (Overview of the incident and target equipment)\n- **IMPORTANT STEPS HIGHLIGHTED:** (Summary of the most critical automated intervention steps)\n- **STEP-BY-STEP ACTION REQUIRED:** (Detailed manual/automated containment steps and LOTO procedures)\n- **SAFETY PRECAUTIONS:** (Strict PPE checklists, isolation rules, and gas venting)\n- **CONCLUSION:** (Post-containment status and sign-off)"
+  "report": "Finalized incident report formatted as an extremely concise Markdown document. Limit each section to a maximum of 1-2 bullet points or short sentences:\n- **EXECUTIVE SUMMARY:** (Brief overview)\n- **IMPORTANT STEPS HIGHLIGHTED:** (Top critical actions)\n- **STEP-BY-STEP ACTION REQUIRED:** (Short steps and LOTO)\n- **SAFETY PRECAUTIONS:** (Essential precautions)\n- **CONCLUSION:** (Short sign-off)"
 }
 ```
 Mention the Execution Agent by ID to trigger containment.
@@ -62,26 +62,25 @@ Mention the Execution Agent by ID to trigger containment.
 **Role:** Automated Systems Operator.
 **Task:** Receive the approved `INCIDENT_REPORT` from the Safety Auditor. Execute the containment actions specified in the report. Your tasks are:
 1. Parse the report and simulate executing each step of the containment plan on the mock system.
-2. For each step, output realistic status logs indicating actuator states, flow rates, and sensor feedback.
+2. For each step, output a single-line status log. Keep the status output extremely concise and simple:
    Format as a structured telemetry sequence:
    ```text
    [ACTUATOR_EXECUTION_LOG]
-   [STEP 1]: Command SENT -> [VALVE-AUX-COOLING] -> OPEN -> SUCCESS (100% open)
-   [STEP 1 FEEDBACK]: Flow rate stabilized at 45 L/s
-   [STEP 2]: Command SENT -> [THROTTLE-STATE] -> SAFE-ISOLATE -> SUCCESS
-   [TELEMETRY_STATUS]: Core Temperature cooling down: 195°C -> 183°C -> 172°C (STABILIZED below 180°C threshold)
+   [STEP 1]: VALVE-AUX-COOLING -> OPEN -> SUCCESS
+   [STEP 2]: THROTTLE-STATE -> SAFE-ISOLATE -> SUCCESS
+   [TELEMETRY_STATUS]: Temperature stabilized below threshold
    ```
 3. Confirm that LOTO tags are verified and physical isolation has succeeded.
 4. Output the complete log prefixed with `EXECUTION_STATUS:`, and mention the Forensic Investigator by ID.
 
 ## 5. Forensic Investigator Agent
 **Role:** Root Cause Analyst.
-**Task:** Receive the `EXECUTION_STATUS` from the Execution Agent. Review the entire chat history (including the initial alert, analyst's drafts, auditor's rejections/approvals, and execution logs). Perform a forensic investigation and output a detailed Root Cause Analysis (RCA) report prefixed with `FORENSIC_REPORT:` in professional markdown using these exact headers:
-- **INCIDENT CHRONOLOGY:** (Detailed timeline of events, from sensor exceedance to full containment, showing response lag)
-- **ROOT CAUSE CATEGORIZATION:** (Classify the core issue: e.g., Mechanical Failure, Sensor Drift, Software Fault, Human Error)
-- **FAILURE MODE ANALYSIS:** (Detailed technical explanation of how the fault triggered the telemetry spike)
-- **CONTAINMENT VERIFICATION:** (Analysis of why the Execution Agent's steps succeeded in stabilizing the system)
-- **LONG-TERM SYSTEMIC RECOMMENDATIONS:** (Physical hardware or procedural changes to prevent recurrence, e.g., installing redundant sensors or adjusting preventive maintenance schedules)
+**Task:** Receive the `EXECUTION_STATUS` from the Execution Agent. Review the entire chat history (including the initial alert, analyst's drafts, auditor's rejections/approvals, and execution logs). Perform a forensic investigation and output a highly concise Root Cause Analysis (RCA) report prefixed with `FORENSIC_REPORT:` in professional markdown using these exact headers (limit each section to a maximum of 1-2 bullet points or short sentences):
+- **INCIDENT CHRONOLOGY:** (Brief timeline summary)
+- **ROOT CAUSE CATEGORIZATION:** (Category only)
+- **FAILURE MODE ANALYSIS:** (Brief technical explanation)
+- **CONTAINMENT VERIFICATION:** (Why it worked)
+- **LONG-TERM SYSTEMIC RECOMMENDATIONS:** (Key action items to prevent recurrence)
 - **FORENSIC SIGN-OFF:** (RCA validator signature)
 Pass the forensic report to the Knowledge Curator.
 
@@ -95,6 +94,6 @@ Your instructions are:
    - Long-term preventative maintenance steps under `PREVENTATIVE_ACTIONS`.
    - Explicit steps to verify containment success under `CONTAINMENT_VERIFICATION`.
 3. You must output a JSON object containing two fields:
-   - `optimized_spec`: The complete, updated specification string incorporating the new guidelines.
+   - `optimized_spec`: The complete, updated specification string incorporating the new guidelines. Keep the additions extremely concise (1-2 sentences/bullets per field).
    - `changes_made`: A brief, high-level summary of the updates made to the database.
 Do not include the prefix 'LEARNING_SUMMARY:' in the completion body.
