@@ -467,6 +467,8 @@ export default function Home() {
           setSelectedBlueprint(currentSelect);
           setBlueprintSpec(bpData[currentSelect]);
         }
+      } else {
+        console.error("Failed to fetch blueprints:", bpRes.status, bpRes.statusText);
       }
 
       // 2. Fetch Prompts
@@ -474,6 +476,8 @@ export default function Home() {
       if (prRes.ok) {
         const prData = await prRes.json();
         setPrompts(prData);
+      } else {
+        console.error("Failed to fetch prompts:", prRes.status, prRes.statusText);
       }
 
       // 3. Fetch History
@@ -481,6 +485,8 @@ export default function Home() {
       if (hiRes.ok) {
         const hiData = await hiRes.json();
         setHistory(hiData);
+      } else {
+        console.error("Failed to fetch history:", hiRes.status, hiRes.statusText);
       }
 
       // 4. Fetch Metrics
@@ -488,6 +494,8 @@ export default function Home() {
       if (mtRes.ok) {
         const mtData = await mtRes.json();
         setMetrics(mtData);
+      } else {
+        console.error("Failed to fetch metrics:", mtRes.status, mtRes.statusText);
       }
 
       // 5. Fetch Equipment Health Status
@@ -495,6 +503,8 @@ export default function Home() {
       if (eqRes.ok) {
         const eqData = await eqRes.json();
         setEquipmentStatus(eqData);
+      } else {
+        console.error("Failed to fetch equipment health:", eqRes.status, eqRes.statusText);
       }
     } catch (err) {
       console.error("Failed to sync backend sandbox state", err);
