@@ -1,0 +1,17 @@
+[Unit]
+Description=TechCare Multi-Agent Swarm Service (Band.ai Remote Agents)
+After=network.target
+
+[Service]
+Type=simple
+User=sudo_ahilesh
+WorkingDirectory=/home/sudo_ahilesh/Documents/Multi-AI-Agent
+ExecStart=/home/sudo_ahilesh/Documents/Multi-AI-Agent/venv/bin/python run_agents.py
+Restart=always
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=techcare-swarm
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+groq
+python-dotenv
+band-sdk
+fastapi
+uvicorn[standard]
+httpx

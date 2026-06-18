@@ -1,0 +1,14 @@
+CISCO CATALYST 2960 SERIES SWITCH MANUAL
+DOCUMENT ID: CISCO-2960-DS-2026
+SECTION 4: OPERATIONAL SAFETY LIMITS & ENVIRONMENTAL BOUNDARIES
+
+1. THERMAL CRITICAL THRESHOLDS:
+* Maximum operating chassis temperature: 65°C.
+* Warning Alert state: 55°C (implies fan speed increase required).
+* Critical Overheat safety threshold: 60°C. If ambient internal temperature reaches 60°C for more than 30 seconds, risk of switch processor thermal throttling, packet drops, and flash memory degradation is high.
+
+2. COMPLIANCE & RECOVERY PROTOCOLS:
+If a thermal alarm is reported on the Cisco Switch 2960:
+* ACTION 1: Automatically increase the primary chassis intake fan speed to 100% and activate secondary exhaust fans.
+* ACTION 2: Reroute high-density network packet traffic and switch trunk ports to the redundant warm-standby core switch (Backup Switch 2960-B) to reduce operational CPU load.
+* ACTION 3: If temperatures do not drop below 50°C within 3 minutes, or if the light indicator shows red, dispatch an on-site network engineer with anti-static wristbands and diagnostic equipment for immediate physical fan replacement and airflow audit.

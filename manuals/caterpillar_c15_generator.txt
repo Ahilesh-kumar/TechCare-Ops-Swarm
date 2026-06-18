@@ -1,0 +1,15 @@
+CATERPILLAR DIESEL GENERATOR BLOCK SPEC SHEET
+MODEL: CATERPILLAR C15 INDUSTRIAL GENERATOR
+SECTION 9: OPERATIONS MONITORING & FREQUENCY SAFETY
+
+1. FREQUENCY CRITICAL LIMITS:
+* Standard operating frequency: 60.0 Hz.
+* Safety tolerance range: 58.5 Hz to 61.5 Hz.
+* Critical Frequency Instability threshold: Under 58.0 Hz or Over 62.0 Hz.
+* Protocol: Grid frequency instability risks damaging downstream factory systems, inducing server hardware faults, and causing magnetic flux in electric motors.
+
+2. COMPLIANCE & CONTAINMENT PROCEDURES:
+If a frequency critical fault is detected on the Caterpillar C15 Generator:
+* ACTION 1: Automatically isolate the Caterpillar C15 Generator from the plant's active electrical grid lines (open main breaker).
+* ACTION 2: Immediately spin up the backup synchronization turbine (Generator Block B) and match load speed.
+* ACTION 3: Dispatch a field service technician with hearing protection and a multitester tool to inspect the electronic governor actuator and fuel line integrity.
