@@ -431,7 +431,7 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are a lead systems analyst and technical engineer. Be precise and base decisions strictly on the enterprise knowledge base."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.0
             )
             return chat_completion.choices[0].message.content
@@ -473,7 +473,7 @@ class SystemsAnalystAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are a lead systems analyst and technical engineer. Be precise and revise the resolution to address safety violations."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.0
             )
             return chat_completion.choices[0].message.content
@@ -859,7 +859,7 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are a Safety Auditor and Compliance Inspector. You must output JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 response_format={"type": "json_object"},
                 temperature=0.0
             )
@@ -918,7 +918,7 @@ class SafetyAuditorAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are a Safety Auditor and Compliance Inspector. Output the report strictly following instructions and using the required headers."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.0
             )
             return chat_completion.choices[0].message.content
@@ -1052,7 +1052,7 @@ class ExecutionAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are an Automated Systems Operator. Generate the execution logs based on the approved report and DB specifications."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.0
             )
             content = chat_completion.choices[0].message.content
@@ -1172,7 +1172,7 @@ class ForensicAdapter(SimpleAdapter[list]):
                     {"role": "system", "content": "You are a Forensic Investigator and Root Cause Analyst. Output a clean markdown report strictly using the required headers."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.0
             )
             content = chat_completion.choices[0].message.content
@@ -1277,7 +1277,7 @@ class KnowledgeCuratorAdapter(SimpleAdapter[list]):
                         {"role": "system", "content": "You are a Feedback & Learning Agent. You must output JSON only."},
                         {"role": "user", "content": prompt}
                     ],
-                    model="llama-3.3-70b-versatile",
+                    model="llama-3.1-8b-instant",
                     response_format={"type": "json_object"},
                     temperature=0.0
                 )
