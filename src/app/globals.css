@@ -73,8 +73,8 @@
   }
 
   html {
-    font-size: 14px;
-    zoom: 1.2; /* Default 120% zoom requested by user */
+    font-size: 16.8px; /* 120% font-size scale (14px * 1.2) for standard text zoom */
+    /* zoom: 1.2; (Removed: CSS zoom causes SVG coordinate translation offsets on animateMotion in Chrome/Safari) */
   }
 
   body {

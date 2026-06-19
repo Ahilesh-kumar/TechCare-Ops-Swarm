@@ -826,6 +826,8 @@ async def reset_sandbox(authenticated: str = Depends(verify_api_key)):
             "facility_name": "Containment Facility Sector 4",
             "safety_officer_email": "safety@techcare.internal",
             "dark_mode": False,
+            "enable_deterministic_fallback": True,
+            "fallback_timeout": 90.0,
             "models": {
                 "coordinator": "llama-3.1-8b-instant",
                 "analyst": "llama-3.3-70b-versatile",

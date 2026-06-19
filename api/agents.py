@@ -2003,7 +2003,7 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
     """Wrapper that runs agent coordination with a deterministic state machine safety timeout fallback."""
     settings = get_settings()
     enable_fallback = settings.get("enable_deterministic_fallback", True)
-    timeout_val = float(settings.get("fallback_timeout", 15.0))
+    timeout_val = float(settings.get("fallback_timeout", 90.0))
 
     # Pre-extract equipment name for the fallback protocol (if needed)
     equipment_name = "Unknown Equipment"
@@ -2113,29 +2113,81 @@ async def trigger_incident_async(alert_text: str, status_callback=None, delay: f
             await asyncio.sleep(min(delay, 0.2))
 
         # Extract actions and details from blueprint_spec
-        blueprint_lines = blueprint_spec.split('\n')
-        target_machine = equipment_name
-        threshold = "Exceeded safety limits"
-        protocol = "Direct fallback required"
-        actions = []
-        for line in blueprint_lines:
-            line_str = line.strip()
-            if line_str.startswith("TARGET:"):
-                target_machine = line_str.replace("TARGET:", "").strip()
-            elif line_str.startswith("CRITICAL THRESHOLD:") or line_str.startswith("CRITICAL FAULT:"):
-                threshold = line_str.replace("CRITICAL THRESHOLD:", "").replace("CRITICAL FAULT:", "").strip()
-            elif line_str.startswith("PROTOCOL:"):
-                protocol = line_str.replace("PROTOCOL:", "").strip()
-            elif "ACTION" in line_str:
-                action_part = line_str.split(":", 1)[1].strip() if ":" in line_str else line_str
-                actions.append(action_part)
+        # Split blueprint spec into blocks by "TARGET:" to handle multi-threshold specs
+        raw_blocks = blueprint_spec.split("TARGET:")
+        parsed_blocks = []
+        for raw_block in raw_blocks:
+            if not raw_block.strip():
+                continue
+            block_content = "TARGET:" + raw_block
+            lines = block_content.split('\n')
+            block_target = equipment_name
+            block_threshold = "Exceeded safety limits"
+            block_protocol = "Direct fallback required"
+            block_actions = []
+            for line in lines:
+                line_str = line.strip()
+                if line_str.startswith("TARGET:"):
+                    block_target = line_str.replace("TARGET:", "").strip()
+                elif line_str.startswith("CRITICAL THRESHOLD:") or line_str.startswith("CRITICAL FAULT:"):
+                    block_threshold = line_str.replace("CRITICAL THRESHOLD:", "").replace("CRITICAL FAULT:", "").strip()
+                elif line_str.startswith("PROTOCOL:"):
+                    block_protocol = line_str.replace("PROTOCOL:", "").strip()
+                elif "ACTION" in line_str:
+                    action_part = line_str.split(":", 1)[1].strip() if ":" in line_str else line_str
+                    block_actions.append(action_part)
+            if block_actions:
+                parsed_blocks.append({
+                    "target": block_target,
+                    "threshold": block_threshold,
+                    "protocol": block_protocol,
+                    "actions": block_actions
+                })
 
-        if not actions:
-            actions = [
-                f"Immediately throttle all feed actuators to {target_machine} to 0%.",
-                "Open physical emergency backup vent valves.",
-                "Engage nitrogen shroud inerting and alert sector command."
-            ]
+        selected_block = None
+        if parsed_blocks:
+            best_score = -1
+            alert_lower = alert_text.lower()
+            for block in parsed_blocks:
+                score = 0
+                thresh_lower = block["threshold"].lower()
+                # Score based on keyword matching
+                if "temp" in thresh_lower or "heat" in thresh_lower or "thermal" in thresh_lower:
+                    if any(k in alert_lower for k in ["temp", "heat", "exothermic", "runaway", "hot", "degree", "°c"]):
+                        score += 3
+                if "pressure" in thresh_lower or "valve" in thresh_lower or "psi" in thresh_lower or "bar" in thresh_lower:
+                    if any(k in alert_lower for k in ["pressure", "valve", "psi", "bar", "barg", "rupture"]):
+                        score += 3
+                if "vibration" in thresh_lower or "motor" in thresh_lower or "rpm" in thresh_lower:
+                    if any(k in alert_lower for k in ["vibration", "motor", "rpm", "vibr"]):
+                        score += 3
+                if "leak" in thresh_lower or "spill" in thresh_lower or "flow" in thresh_lower:
+                    if any(k in alert_lower for k in ["leak", "spill", "flow", "rupture"]):
+                        score += 3
+
+                # Word overlap score
+                words = thresh_lower.replace(">", "").replace("<", "").replace("=", "").split()
+                for w in words:
+                    if len(w) > 3 and w in alert_lower:
+                        score += 1
+
+                if score > best_score:
+                    best_score = score
+                    selected_block = block
+
+            if selected_block is None or best_score <= 0:
+                selected_block = parsed_blocks[0]
+
+        if selected_block:
+            target_machine = selected_block["target"]
+            threshold = selected_block["threshold"]
+            protocol = selected_block["protocol"]
+            actions = selected_block["actions"]
+        else:
+            target_machine = equipment_name
+            threshold = "Exceeded safety limits"
+            protocol = "Direct fallback required"
+            actions = []
 
         # Build structured Safety Incident Report sections
         safety_report_section = (

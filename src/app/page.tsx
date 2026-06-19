@@ -2060,11 +2060,7 @@ export default function Home() {
               borderBottom: `1px solid ${consoleBorder}`,
               marginBottom: "4px",
             }}>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444" }} />
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#f59e0b" }} />
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }} />
               <span style={{
-                marginLeft: "auto",
                 fontFamily: "'SF Mono', monospace",
                 fontSize: "8px", fontWeight: 600,
                 letterSpacing: "0.1em", textTransform: "uppercase",
@@ -4014,18 +4010,18 @@ export default function Home() {
                           </label>
                         </div>
 
-                        {settings.enable_deterministic_fallback && (
+                        {(settings.enable_deterministic_fallback ?? true) && (
                           <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
                             <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
                               <span>Safety Timeout Threshold</span>
-                              <span className="text-blue-600 font-extrabold">{settings.fallback_timeout ?? 15}s</span>
+                              <span className="text-blue-600 font-extrabold">{settings.fallback_timeout ?? 90}s</span>
                             </div>
                             <input
                               type="range"
                               min="3"
-                              max="30"
+                              max="120"
                               step="1"
-                              value={settings.fallback_timeout ?? 15}
+                              value={settings.fallback_timeout ?? 90}
                               onChange={(e) => setSettings({ ...settings, fallback_timeout: parseInt(e.target.value) })}
                               className="w-full h-1 bg-slate-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                             />
