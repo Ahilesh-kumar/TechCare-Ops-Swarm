@@ -79,6 +79,80 @@ def invalidate_settings_cache():
     if "agents" in sys.modules:
         sys.modules["agents"]._settings_cache = None
 
+async def send_fcm_notification(alert_text: str):
+    """
+    Dispatches a Firebase Cloud Messaging push notification to the configured Android device token.
+    Supports both real FCM v1 messaging (if credentials exist) and clean simulated logs.
+    """
+    settings = get_settings()
+    if not settings.get("android_push_notifications", False):
+        logger.info("[FCM] Push notifications are disabled in settings.")
+        return
+        
+    device_token = settings.get("android_device_token", "").strip()
+    if not device_token:
+        logger.warning("[FCM] Push notifications are enabled, but no FCM Device Token is configured.")
+        return
+        
+    min_level = settings.get("android_min_alert_level", "WARNING")
+    
+    # Determine alert level
+    alert_lower = alert_text.lower()
+    if any(k in alert_lower for k in ["critical", "runaway", "explosion", "danger", "fire", "rupture", "hazard"]):
+        alert_level = "CRITICAL"
+    elif any(k in alert_lower for k in ["warning", "exceed", "limit", "fault", "fail", "leak", "high", "low", "deviat"]):
+        alert_level = "WARNING"
+    else:
+        alert_level = "INFO"
+        
+    levels = ["INFO", "WARNING", "CRITICAL"]
+    try:
+        min_idx = levels.index(min_level)
+        alert_idx = levels.index(alert_level)
+    except ValueError:
+        min_idx = 1
+        alert_idx = 1
+        
+    if alert_idx < min_idx:
+        logger.info(f"[FCM] Alert level {alert_level} is below minimum level {min_level}. Skipping push notification.")
+        return
+        
+    logger.info(f"[FCM] Dispatching push notification for alert [{alert_level}]: {alert_text}")
+    
+    # Check for credentials
+    firebase_creds_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT") or os.path.join(os.path.dirname(__file__), "firebase-key.json")
+    if os.path.exists(firebase_creds_path):
+        try:
+            import firebase_admin
+            from firebase_admin import credentials, messaging
+            import time
+            
+            if not firebase_admin._apps:
+                cred = credentials.Certificate(firebase_creds_path)
+                firebase_admin.initialize_app(cred)
+                
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=f"⚠️ TechCare Alert: {alert_level}",
+                    body=alert_text
+                ),
+                token=device_token,
+                data={
+                    "alert_level": alert_level,
+                    "incident_time": str(time.time())
+                }
+            )
+            # Run blocking call in a thread pool
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, messaging.send, message)
+            logger.info(f"[FCM] Push notification sent successfully. Message ID: {response}")
+        except Exception as e:
+            logger.error(f"[FCM] Failed to send push notification via Firebase Admin SDK: {e}")
+    else:
+        logger.info(f"[FCM SIMULATION] Push message triggered successfully!")
+        logger.info(f"[FCM SIMULATION] Target Token: {device_token}")
+        logger.info(f"[FCM SIMULATION] Notification Payload: {{'title': '⚠️ TechCare Alert: {alert_level}', 'body': '{alert_text}'}}")
+
 async def validate_telemetry_alert(alert_text: str, mock_mode: bool = False) -> tuple[bool, str]:
     """
     Validates if the incoming alert is a logical telemetry alert, system fault,
@@ -1794,6 +1868,12 @@ async def _trigger_incident_async_impl(alert_text: str, status_callback=None, de
         if status_callback:
             await status_callback("Coordinator Agent", f"❌ Validation failed: {reason}")
         raise ValueError(f"Invalid alert: {reason}")
+
+    # Trigger FCM notification
+    try:
+        await send_fcm_notification(alert_text)
+    except Exception as e:
+        logger.exception("Error in send_fcm_notification:")
 
     # Step 1: Coordinator parses alert
     if status_callback:
