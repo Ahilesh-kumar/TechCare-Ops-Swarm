@@ -3,21 +3,50 @@ import json
 import os
 import sys
 import uuid
+import logging
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Add the current directory to python path for local imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from agents import trigger_incident_async
+    from agents import trigger_incident_async, invalidate_settings_cache, hitl_events, hitl_decisions
 except ImportError:
-    from api.agents import trigger_incident_async
+    from api.agents import trigger_incident_async, invalidate_settings_cache, hitl_events, hitl_decisions
 
+try:
+    import db
+except ImportError:
+    from api import db
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("TechCareSafeGuardAPI")
+
+# Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Bearer Token Verification
+security = HTTPBearer(auto_error=False)
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security)):
+    secret_key = os.environ.get("API_SECRET_KEY")
+    if not secret_key:
+        return None
+    if not credentials or credentials.credentials != secret_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return credentials.credentials
 
 @app.get("/")
 def read_root():
@@ -25,6 +54,13 @@ def read_root():
 
 @app.on_event("startup")
 async def startup_event():
+    # Initialize SQLite database and run JSON migrations
+    try:
+        await db.init_db()
+        logger.info("Database initialized successfully.")
+    except Exception as e:
+        logger.exception("Failed to initialize database:")
+
     # Only start background agents if explicitly requested (e.g. on Render production)
     if os.environ.get("START_BG_AGENTS") == "true":
         try:
@@ -35,11 +71,11 @@ async def startup_event():
             
             import run_agents
             asyncio.create_task(run_agents.main())
-            print("🚀 Started persistent Band.ai agents runner task in the background.")
+            logger.info("Started persistent Band.ai agents runner task in the background.")
         except Exception as e:
-            print(f"⚠️ Failed to start background agents runner: {e}")
+            logger.error(f"Failed to start background agents runner: {e}")
     else:
-        print("ℹ️ Background agents runner skipped. Run 'python run_agents.py' manually to connect remote agents.")
+        logger.info("Background agents runner skipped. Run 'python run_agents.py' manually to connect remote agents.")
 
 # Configure CORS for frontend access
 _frontend_url = os.environ.get("FRONTEND_URL", "")
@@ -63,12 +99,13 @@ app.add_middleware(
 # File paths
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), "history.json")
 PROMPTS_PATH = os.path.join(os.path.dirname(__file__), "prompt_rules.md")
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "settings.json")
 
 class TriggerPayload(BaseModel):
-    alert_text: str
-    delay: float = 0.1
-    live_mode: bool = True
-    mock_mode: bool = False
+    alert_text: str = Field(..., min_length=5, max_length=2000, description="The telemetry alert text to evaluate.")
+    delay: float = Field(0.1, ge=0.0, le=10.0, description="Delay between agent execution steps.")
+    live_mode: bool = Field(True, description="Enable live Groq completions.")
+    mock_mode: bool = Field(False, description="Enable simulated local mode.")
 
 class BlueprintPayload(BaseModel):
     name: str
@@ -85,31 +122,9 @@ class PromptsPayload(BaseModel):
 # Helper: Save history record
 async def save_history_record(alert_text, equipment, status, latency, logs, report):
     try:
-        record = {
-            "id": str(uuid.uuid4())[:8],
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "alert_text": alert_text,
-            "equipment": equipment,
-            "status": status,
-            "latency": latency,
-            "logs": logs,
-            "report": report
-        }
-        
-        history_data = []
-        if os.path.exists(HISTORY_PATH):
-            try:
-                with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                    history_data = json.load(f)
-            except Exception:
-                pass
-        
-        history_data.insert(0, record)
-        
-        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-            json.dump(history_data, f, indent=4, ensure_ascii=False)
+        await db.save_history_record(alert_text, equipment, status, latency, logs, report)
     except Exception as e:
-        print(f"Error logging history: {e}")
+        logger.exception("Error logging history:")
 
 # Helper: Parse prompt rules
 def parse_prompts():
@@ -143,7 +158,7 @@ def parse_prompts():
             forensic = get_section(content, "## 5. Forensic Investigator Agent", "## 6. Knowledge Curator Agent")
             curator = get_section(content, "## 6. Knowledge Curator Agent")
         except Exception as e:
-            print(f"Error parsing prompts: {e}")
+            logger.exception("Error parsing prompts:")
             
     return {
         "coordinator": coordinator,
@@ -176,11 +191,12 @@ def save_prompts(coordinator, analyst, auditor, execution, forensic, curator):
             f.write(content)
         return True
     except Exception as e:
-        print(f"Error saving prompts: {e}")
+        logger.exception("Error saving prompts:")
         return False
 
 @app.post("/api/trigger")
-async def trigger_safeguard(payload: TriggerPayload):
+@limiter.limit("5/minute")
+async def trigger_safeguard(request: Request, payload: TriggerPayload, authenticated: str = Depends(verify_api_key)):
     """
     Streaming endpoint that runs the agent orchestration SafeGuard, logs history,
     and yields progress updates in real-time using Server-Sent Events (SSE).
@@ -190,7 +206,19 @@ async def trigger_safeguard(payload: TriggerPayload):
 
     # The status callback will be invoked by the agents to push UI updates
     async def status_callback(agent: str, text: str):
-        if text.startswith("REPORT_SAFETY:"):
+        if text.startswith("HITL_AWAITING:"):
+            parts = text.split("HITL_AWAITING:", 1)[1].split(":", 2)
+            inc_id = parts[0]
+            equip = parts[1]
+            checklist = parts[2] if len(parts) > 2 else ""
+            logs.append({"agent": agent, "text": f"PAUSED: Awaiting Operator Authorization for containment on {equip}..."})
+            await queue.put({
+                "type": "hitl_awaiting",
+                "incident_id": inc_id,
+                "equipment_name": equip,
+                "proposed_checklist": checklist
+            })
+        elif text.startswith("REPORT_SAFETY:"):
             content = text.split("REPORT_SAFETY:", 1)[1]
             await queue.put({"type": "report_part", "part": "safety", "content": content})
         elif text.startswith("REPORT_EXECUTION:"):
@@ -224,6 +252,11 @@ async def trigger_safeguard(payload: TriggerPayload):
             )
             status = "success"
             await queue.put({"type": "report", "report": report})
+        except asyncio.CancelledError:
+            logger.info("Orchestrator task cancelled due to client disconnect")
+            status = "cancelled"
+            error_msg = "Execution cancelled by client disconnect"
+            raise
         except Exception as e:
             error_msg = str(e)
             await queue.put({"type": "error", "message": error_msg})
@@ -254,15 +287,33 @@ async def trigger_safeguard(payload: TriggerPayload):
             await queue.put(None)
 
     # Launch task
-    asyncio.create_task(run_orchestrator())
+    orchestrator_task = asyncio.create_task(run_orchestrator())
 
-    # Generator for SSE chunks
+    # Generator for SSE chunks with disconnect checking and task cancellation
     async def sse_generator():
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    logger.warning("Client disconnected from SSE stream. Initiating cleanup...")
+                    break
+                
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    if event is None:
+                        break
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+        except asyncio.CancelledError:
+            logger.warning("SSE generator task cancelled")
+        finally:
+            if not orchestrator_task.done():
+                logger.warning("Client disconnected while orchestrator was running. Cancelling orchestrator task...")
+                orchestrator_task.cancel()
+                try:
+                    await orchestrator_task
+                except asyncio.CancelledError:
+                    pass
 
     return StreamingResponse(
         sse_generator(),
@@ -274,27 +325,50 @@ async def trigger_safeguard(payload: TriggerPayload):
         }
     )
 
+# --- HUMAN-IN-THE-LOOP (HITL) ENDPOINTS ---
+
+@app.post("/api/hitl/approve")
+async def hitl_approve(payload: dict, authenticated: str = Depends(verify_api_key)):
+    incident_id = payload.get("incident_id")
+    if not incident_id or incident_id not in hitl_events:
+        raise HTTPException(status_code=404, detail="Incident not found or already processed")
+    hitl_decisions[incident_id] = "approved"
+    hitl_events[incident_id].set()
+    logger.info(f"HITL Incident {incident_id} approved by user.")
+    return {"status": "approved"}
+
+@app.post("/api/hitl/decline")
+async def hitl_decline(payload: dict, authenticated: str = Depends(verify_api_key)):
+    incident_id = payload.get("incident_id")
+    if not incident_id or incident_id not in hitl_events:
+        raise HTTPException(status_code=404, detail="Incident not found or already processed")
+    hitl_decisions[incident_id] = "declined"
+    hitl_events[incident_id].set()
+    logger.info(f"HITL Incident {incident_id} declined by user.")
+    return {"status": "declined"}
+
 # --- KNOWLEDGE BASE ENDPOINTS ---
 
 @app.get("/api/blueprints")
 async def get_blueprints():
-    from mock_database import ENTERPRISE_KNOWLEDGE_BASE
+    from dynamic_db import ENTERPRISE_KNOWLEDGE_BASE
     return ENTERPRISE_KNOWLEDGE_BASE._load()
 
 @app.post("/api/blueprints")
-async def save_blueprint(payload: BlueprintPayload):
-    from mock_database import ENTERPRISE_KNOWLEDGE_BASE
+async def save_blueprint(payload: BlueprintPayload, authenticated: str = Depends(verify_api_key)):
+    from dynamic_db import ENTERPRISE_KNOWLEDGE_BASE
     ENTERPRISE_KNOWLEDGE_BASE.update_spec(payload.name, payload.spec)
     return {"status": "ok"}
 
 @app.delete("/api/blueprints/{name}")
-async def delete_blueprint(name: str):
-    from mock_database import ENTERPRISE_KNOWLEDGE_BASE
+async def delete_blueprint(name: str, authenticated: str = Depends(verify_api_key)):
+    from dynamic_db import ENTERPRISE_KNOWLEDGE_BASE
     ENTERPRISE_KNOWLEDGE_BASE.delete_spec(name)
     return {"status": "ok"}
 
 @app.post("/api/scan-network")
-async def scan_network():
+@limiter.limit("5/minute")
+async def scan_network(request: Request, authenticated: str = Depends(verify_api_key)):
     """
     Simulates scanning the plant network and auto-ingesting blueprints,
     streaming progress logs in real-time.
@@ -310,19 +384,39 @@ async def scan_network():
         try:
             results = await simulate_network_scan_async(status_callback=status_callback)
             await queue.put({"type": "results", "results": results})
+        except asyncio.CancelledError:
+            logger.info("Network scanner task cancelled due to client disconnect")
+            raise
         except Exception as e:
             await queue.put({"type": "error", "message": str(e)})
         finally:
             await queue.put(None)
             
-    asyncio.create_task(run_scanner())
+    scanner_task = asyncio.create_task(run_scanner())
     
     async def sse_generator():
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    logger.warning("Client disconnected from scan network SSE stream. Initiating cleanup...")
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    if event is None:
+                        break
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+        except asyncio.CancelledError:
+            logger.warning("Scan SSE generator task cancelled")
+        finally:
+            if not scanner_task.done():
+                logger.warning("Client disconnected while scanning was running. Cancelling scanner task...")
+                scanner_task.cancel()
+                try:
+                    await scanner_task
+                except asyncio.CancelledError:
+                    pass
             
     return StreamingResponse(
         sse_generator(),
@@ -340,8 +434,57 @@ async def scan_network():
 async def get_prompts():
     return parse_prompts()
 
+BACKUP_DIR = os.path.join(os.path.dirname(__file__), "prompts_backup")
+
 @app.post("/api/prompts")
-async def post_prompts(payload: PromptsPayload):
+async def post_prompts(payload: PromptsPayload, authenticated: str = Depends(verify_api_key)):
+    # 1. Validate fields are not empty
+    if not payload.coordinator.strip() or not payload.analyst.strip() or not payload.auditor.strip() or not payload.execution.strip() or not payload.forensic.strip() or not payload.curator.strip():
+        raise HTTPException(status_code=400, detail="Cannot save prompts: one or more agent sections are empty")
+
+    # 2. Validate that the combined text contains all six mandatory agent markdown headers
+    reconstructed_content = (
+        "# SafeGuard Agent Definitions & Rules\n\n"
+        "## 1. Coordinator Agent\n"
+        f"{payload.coordinator}\n\n"
+        "## 2. Systems Analyst Agent\n"
+        f"{payload.analyst}\n\n"
+        "## 3. Safety Auditor Agent\n"
+        f"{payload.auditor}\n\n"
+        "## 4. Execution Agent\n"
+        f"{payload.execution}\n\n"
+        "## 5. Forensic Investigator Agent\n"
+        f"{payload.forensic}\n\n"
+        "## 6. Knowledge Curator Agent\n"
+        f"{payload.curator}\n"
+    )
+    
+    required_headers = [
+        "## 1. Coordinator Agent",
+        "## 2. Systems Analyst Agent",
+        "## 3. Safety Auditor Agent",
+        "## 4. Execution Agent",
+        "## 5. Forensic Investigator Agent",
+        "## 6. Knowledge Curator Agent"
+    ]
+    missing = [h for h in required_headers if h not in reconstructed_content]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Cannot save prompts: missing mandatory headers: {', '.join(missing)}")
+
+    # 3. Make backup of current prompts
+    if os.path.exists(PROMPTS_PATH):
+        try:
+            os.makedirs(BACKUP_DIR, exist_ok=True)
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(BACKUP_DIR, f"{timestamp}_prompt_rules.md")
+            with open(PROMPTS_PATH, "r", encoding="utf-8") as src:
+                current_content = src.read()
+            with open(backup_path, "w", encoding="utf-8") as dst:
+                dst.write(current_content)
+        except Exception as e:
+            logger.exception("Failed to create prompt backup:")
+
+    # 4. Save prompts
     success = save_prompts(
         payload.coordinator,
         payload.analyst,
@@ -354,21 +497,110 @@ async def post_prompts(payload: PromptsPayload):
         raise HTTPException(status_code=500, detail="Failed to save prompts")
     return {"status": "ok"}
 
+# --- GLOBAL SYSTEM CONFIGURATION & SETTINGS ENDPOINTS ---
+
+@app.get("/api/settings")
+async def get_settings():
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Map legacy models to currently supported dropdown values
+                models = data.get("models", {})
+                for k, v in list(models.items()):
+                    if v == "llama3-70b-8192":
+                        models[k] = "llama-3.3-70b-versatile"
+                return data
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to read settings: {str(e)}")
+    return {}
+
+@app.post("/api/settings")
+async def update_settings(payload: dict, authenticated: str = Depends(verify_api_key)):
+    try:
+        existing = {}
+        if os.path.exists(SETTINGS_PATH):
+            try:
+                with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        for k, v in payload.items():
+            existing[k] = v
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=4, ensure_ascii=False)
+        invalidate_settings_cache()
+        return existing
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+
+@app.get("/api/prompts/history")
+async def get_prompts_history():
+    """Lists available prompt backups."""
+    if not os.path.exists(BACKUP_DIR):
+        return []
+    try:
+        backups = []
+        for file in sorted(os.listdir(BACKUP_DIR), reverse=True):
+            if file.endswith("_prompt_rules.md"):
+                parts = file.split("_")
+                date_str = parts[0]
+                time_str = parts[1]
+                formatted_time = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]} UTC"
+                backups.append({
+                    "filename": file,
+                    "timestamp": formatted_time
+                })
+        return backups
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list backups: {str(e)}")
+
+class RollbackPayload(BaseModel):
+    filename: str
+
+@app.post("/api/prompts/rollback")
+async def rollback_prompts(payload: RollbackPayload, authenticated: str = Depends(verify_api_key)):
+    """Rolls back prompt_rules.md to a backup file."""
+    target_path = os.path.join(BACKUP_DIR, payload.filename)
+    if not os.path.exists(target_path):
+        raise HTTPException(status_code=404, detail="Backup file not found")
+    try:
+        with open(target_path, "r", encoding="utf-8") as f:
+            backup_content = f.read()
+
+        required_headers = [
+            "## 1. Coordinator Agent",
+            "## 2. Systems Analyst Agent",
+            "## 3. Safety Auditor Agent",
+            "## 4. Execution Agent",
+            "## 5. Forensic Investigator Agent",
+            "## 6. Knowledge Curator Agent"
+        ]
+        missing = [h for h in required_headers if h not in backup_content]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Cannot rollback: Backup file is missing mandatory sections: {', '.join(missing)}")
+
+        with open(PROMPTS_PATH, "w", encoding="utf-8") as f:
+            f.write(backup_content)
+
+        return {"status": "ok", "message": "Prompts rolled back successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(e)}")
+
 # --- EQUIPMENT HEALTH & SIMULATION TELEMETRY ---
 
 @app.get("/api/equipment")
 async def get_equipment_status():
-    from mock_database import ENTERPRISE_KNOWLEDGE_BASE
+    from dynamic_db import ENTERPRISE_KNOWLEDGE_BASE
     blueprints = ENTERPRISE_KNOWLEDGE_BASE._load()
     
-    # Load history to compute status
-    history_data = []
-    if os.path.exists(HISTORY_PATH):
-        try:
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-        except Exception:
-            pass
+    # Load history to compute status from database
+    try:
+        history_data = await db.get_history(page=1, limit=1000)
+    except Exception:
+        history_data = []
             
     result = []
     current_time = datetime.utcnow()
@@ -433,15 +665,12 @@ async def get_equipment_status():
 
 @app.get("/api/history/{run_id}/export")
 async def export_report(run_id: str):
-    history_data = []
-    if os.path.exists(HISTORY_PATH):
-        try:
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-        except Exception:
-            pass
-            
-    record = next((r for r in history_data if r.get("id") == run_id), None)
+    try:
+        record = await db.get_history_by_id(run_id)
+    except Exception as e:
+        logger.exception("Failed to fetch history record for export:")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch record: {str(e)}")
+        
     if not record:
         raise HTTPException(status_code=404, detail="Incident record not found")
         
@@ -472,25 +701,15 @@ async def export_report(run_id: str):
 # --- RESET SANDBOX ENDPOINT ---
 
 @app.post("/api/reset")
-async def reset_sandbox():
+async def reset_sandbox(authenticated: str = Depends(verify_api_key)):
     try:
-        # 1. Reset history.json
-        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-            f.write("[]")
+        # 1. Reset history table in SQLite
+        await db.clear_history()
+        await db.migrate_history()
             
-        # 2. Reset database.json to defaults
-        defaults = {
-            "Vat 4": "TARGET: Chemical Mixing Vat 4\nCRITICAL THRESHOLD: 180°C\nPROTOCOL: If temperature exceeds 150°C, risk of thermal runaway is high.\nACTION 1: Do NOT dispatch human personnel to the floor.\nACTION 2: Immediately trigger auxiliary coolant loop valves.\nACTION 3: Command safe-state throttling to isolate the vat from the main\nassembly line.",
-            "Server Rack B": "TARGET: Server Rack B (Financial Database)\nCRITICAL THRESHOLD: 85°C\nPROTOCOL: If ambient rack temperature exceeds 80°C, risk of data\ncorruption and hardware melting is imminent.\nACTION 1: Reroute active network traffic to Backup Rack C.\nACTION 2: Throttle Rack B CPU loads to 30%.\nACTION 3: Spin up emergency HVAC unit in Sector 4.",
-            "Robotic Arm 9": "TARGET: Conveyor Robotic Arm 9\nCRITICAL FAULT: Motor Stalling / High Torque Resistance\nPROTOCOL: If arm stalls for more than 5 seconds, gear stripping or human\nobstruction is likely.\nACTION 1: Cut main power to Arm 9 immediately (E-Stop).\nACTION 2: Lock conveyor belt to prevent pile-up.\nACTION 3: Dispatch human maintenance crew with lockout/tagout gear for\nphysical inspection.",
-            "Cooling Tower 2": "TARGET: Main Water Cooling Tower 2\nCRITICAL THRESHOLD: Flow rate < 10 L/s or Return Water Temp > 45°C\nPROTOCOL: If flow rate drops or temperature spikes, steam locks and boiler\nrupture are imminent.\nACTION 1: Open auxiliary loop bypass flow valves to 100%.\nACTION 2: Throttle steam turbine feed pressure to 40%.\nACTION 3: Inject chemical descaler into active cooling chambers.",
-            "Main Generator Block A": "TARGET: Power Supply Main Generator Block A\nCRITICAL THRESHOLD: Frequency < 59.5 Hz or Frequency > 60.5 Hz\nPROTOCOL: Grid frequency instability risks damaging high-voltage factory machinery\nand inducing localized blackouts.\nACTION 1: Isolate Block A from the plant's active grid lines.\nACTION 2: Synchronize and start Backup Generator B.\nACTION 3: Shed non-essential factory zone loads (warehouse lights, HVAC).",
-            "Pneumatic Press 7": "TARGET: Heavy Press Sector 3 (Pneumatic Press 7)\nCRITICAL FAULT: System pressure < 4 Bar or Light Curtain obstruction\nPROTOCOL: Insufficient pressure risks material deformation; light curtain breach\nindicates a severe operator crush hazard.\nACTION 1: Trigger physical locks on the pressing piston cylinder.\nACTION 2: Shut down raw component feed conveyor.\nACTION 3: Broadcast alarm signal and sirens in Sector 3."
-        }
-        
-        from mock_database import DB_PATH
-        with open(DB_PATH, "w", encoding="utf-8") as f:
-            json.dump(defaults, f, indent=4, ensure_ascii=False)
+        # 2. Reset blueprints database to defaults in SQLite by clearing and running migrations
+        await db.clear_blueprints()
+        await db.migrate_blueprints()
             
         # 3. Reset prompt_rules.md to defaults
         default_prompts = (
@@ -601,55 +820,64 @@ async def reset_sandbox():
         with open(PROMPTS_PATH, "w", encoding="utf-8") as f:
             f.write(default_prompts)
             
-        return {"status": "ok", "message": "Database and prompts restored to factory defaults."}
+        # 4. Reset settings.json to defaults
+        default_settings = {
+            "company_name": "TechCare SafeGuard",
+            "facility_name": "Containment Facility Sector 4",
+            "safety_officer_email": "safety@techcare.internal",
+            "dark_mode": False,
+            "models": {
+                "coordinator": "llama-3.1-8b-instant",
+                "analyst": "llama-3.3-70b-versatile",
+                "auditor": "llama-3.3-70b-versatile",
+                "execution": "llama-3.1-8b-instant",
+                "forensic": "llama-3.3-70b-versatile",
+                "curator": "llama-3.1-8b-instant"
+            },
+            "temperatures": {
+                "coordinator": 0.0,
+                "analyst": 0.0,
+                "auditor": 0.0,
+                "execution": 0.0,
+                "forensic": 0.0,
+                "curator": 0.2
+            },
+            "max_tokens": {
+                "coordinator": 80,
+                "analyst": 450,
+                "auditor": 450,
+                "execution": 450,
+                "forensic": 450,
+                "curator": 450
+            },
+            "cost_tracker": {
+                "total_tokens": 0,
+                "total_cost": 0.0
+            }
+        }
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(default_settings, f, indent=4, ensure_ascii=False)
+            
+        invalidate_settings_cache()
+        return {"status": "ok", "message": "Database, settings, and prompts restored to factory defaults."}
     except Exception as e:
+        logger.exception("Reset failed:")
         raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
 
 # --- INCIDENT HISTORY & SYSTEM METRICS ENDPOINTS ---
 
 @app.get("/api/history")
-async def get_history():
-    if os.path.exists(HISTORY_PATH):
-        try:
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
+async def get_history(page: int = 1, limit: int = 50):
+    try:
+        return await db.get_history(page=page, limit=limit)
+    except Exception as e:
+        logger.exception("Failed to get history:")
+        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 @app.get("/api/metrics")
 async def get_metrics():
-    history_data = []
-    if os.path.exists(HISTORY_PATH):
-        try:
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                history_data = json.load(f)
-        except Exception:
-            pass
-            
-    total_runs = len(history_data)
-    if total_runs == 0:
-        return {
-            "total_runs": 0,
-            "success_rate": 0,
-            "avg_latency": 0,
-            "alarms_by_equipment": {}
-        }
-        
-    successes = sum(1 for r in history_data if r.get("status") == "success")
-    success_rate = round((successes / total_runs) * 100, 1)
-    
-    total_latency = sum(r.get("latency", 0) for r in history_data)
-    avg_latency = round(total_latency / total_runs, 2)
-    
-    alarms = {}
-    for r in history_data:
-        eq = r.get("equipment", "Unknown Equipment")
-        alarms[eq] = alarms.get(eq, 0) + 1
-        
-    return {
-        "total_runs": total_runs,
-        "success_rate": success_rate,
-        "avg_latency": avg_latency,
-        "alarms_by_equipment": alarms
-    }
+    try:
+        return await db.get_metrics()
+    except Exception as e:
+        logger.exception("Failed to get metrics:")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")

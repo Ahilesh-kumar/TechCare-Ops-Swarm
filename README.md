@@ -23,8 +23,51 @@ This project demonstrates a robust multi-agent orchestration protocol where agen
 * **Frontend:** Next.js (React, Tailwind CSS)
 * **Backend:** FastAPI (Python)
 * **Agent Framework:** Band SDK
-* **LLM Provider:** Groq API (Llama 3 / Mixtral models)
+* **LLM Provider:** Groq API (Llama 3.1 & 3.3 models)
+* **Database:** SQLite (SQLAlchemy / aiosqlite for dynamic blueprints & history tracking)
 * **Deployment:** Vercel (Frontend) & Render (Backend)
+
+---
+
+## 🤖 Band.ai Multi-Agent Orchestration Protocol
+
+The system utilizes the **Band SDK** to instantiate and coordinate 6 specialized, autonomous AI agents. These agents communicate asynchronously via Band chat rooms, executing a strict safety-containment feedback loop:
+
+1. **Coordinator Agent:** Operations Desk Manager. Triggered by incoming OPC-UA/MQTT telemetry alerts. It parses the alert details, creates a dedicated Band chat room, and invites the other agents.
+2. **Systems Analyst Agent:** Lead Technical Engineer. Performs a dynamic lookup of critical thresholds in the database (`dynamic_db.py`) for the target equipment, designs a containment plan, and references lockout/tagout (LOTO) protocols.
+3. **Safety Auditor Agent:** Compliance Inspector. Audits the Systems Analyst's proposal. If any PPE/LOTO or environmental verification is missing, it issues a `SAFETY_AUDIT_REJECT:` feedback payload, forcing the Analyst to revise the steps. Once safe, it signs off and generates the final markdown report.
+4. **Execution Agent:** Automated Systems Operator. Receives the finalized report and simulates the actuator containment sequence (e.g., closing valves, tripping breakers) on the virtual plant floor.
+5. **Forensic Investigator Agent:** Root Cause Analyst. Analyzes the entire chat room chronology to compile a Forensic Root Cause Analysis (RCA) report.
+6. **Knowledge Curator Agent:** Feedback & Learning Agent. Curates the incident details, extracting new failure modes or recommended threshold updates, and commits them back to the active knowledge base.
+
+```mermaid
+sequenceDiagram
+    participant Telemetry Alert
+    participant Coordinator Agent
+    participant Systems Analyst
+    participant Safety Auditor
+    participant Execution Agent
+    participant Forensic Investigator
+    participant Knowledge Curator
+    participant SQLite DB (dynamic_db)
+
+    Telemetry Alert->>Coordinator Agent: Spikes/Alert Trigger
+    Coordinator Agent->>Systems Analyst: Create Room & Alert Details
+    Systems Analyst->>SQLite DB (dynamic_db): Retrieve Specs & Thresholds
+    SQLite DB (dynamic_db)-->>Systems Analyst: Specifications Return
+    Systems Analyst->>Safety Auditor: Propose Containment Plan (TECHNICAL_RESOLUTION)
+    
+    rect rgb(30, 30, 30)
+        note right of Safety Auditor: Compliance & Safety Verification Check
+        Safety Auditor-->>Systems Analyst: REJECT if PPE/LOTO missing (SAFETY_AUDIT_REJECT)
+        Systems Analyst->>Safety Auditor: Submit Revised Resolution
+    end
+
+    Safety Auditor->>Execution Agent: Safe Containment Approved (INCIDENT_REPORT)
+    Execution Agent->>Forensic Investigator: Actuator Sequence Complete (EXECUTION_STATUS)
+    Forensic Investigator->>Knowledge Curator: Forensic Chronology & RCA (FORENSIC_REPORT)
+    Knowledge Curator->>SQLite DB (dynamic_db): Commit System Learnings (update_spec)
+```
 
 ---
 

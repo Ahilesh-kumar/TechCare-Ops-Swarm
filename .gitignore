@@ -26,3 +26,8 @@ scratch/
 
 # Vercel
 .vercel/
+
+# SafeGuard Local Files
+api/safeguard.db
+api/settings.json
+

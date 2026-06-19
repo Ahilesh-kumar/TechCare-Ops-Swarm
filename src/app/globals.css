@@ -2,19 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   DESIGN TOKENS — CSS Custom Properties
+   Premium Black Dark + Professional Enterprise Light
+   ============================================================ */
+
+:root {
+  /* Light Mode Tokens */
+  --bg-root: #f4f6f8;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-secondary: #f1f5f9;
+  --bg-tertiary: #e8edf2;
+  --color-border: #dde2e9;
+  --color-border-soft: #e9ecef;
+  --text-primary: #0d1117;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-micro: #9ca3af;
+  --accent-blue: #0b57d0;
+  --accent-blue-hover: #0842a3;
+  --accent-glow: rgba(11, 87, 208, 0.15);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.05);
+  --sidebar-width: 280px;
+  --scrollbar-thumb: #c1cad4;
+  --nav-active-bg: #e8f0fe;
+  --nav-active-text: #1a56db;
+  --nav-active-border: #a8c0fd;
+  --nav-hover-bg: #f0f4ff;
+  --grid-line: rgba(15, 23, 42, 0.05);
+}
+
+.dark {
+  /* Premium Black Dark Tokens */
+  --bg-root: #000000;
+  --bg-panel: #0a0a0a;
+  --bg-card: #111111;
+  --bg-secondary: #161616;
+  --bg-tertiary: #1c1c1e;
+  --color-border: #1f1f23;
+  --color-border-soft: #2a2a2e;
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-micro: #52525b;
+  --accent-blue: #3b82f6;
+  --accent-blue-hover: #60a5fa;
+  --accent-glow: rgba(59, 130, 246, 0.12);
+  --shadow-card: 0 0 0 1px #1f1f23, 0 4px 24px rgba(0,0,0,0.5);
+  --shadow-elevated: 0 0 0 1px #2a2a2e, 0 8px 40px rgba(0,0,0,0.7);
+  --scrollbar-thumb: #2d2d32;
+  --nav-active-bg: rgba(255,255,255,0.05);
+  --nav-active-text: #ffffff;
+  --nav-active-border: rgba(255,255,255,0.12);
+  --nav-hover-bg: rgba(255,255,255,0.03);
+  --grid-line: rgba(255, 255, 255, 0.02);
+}
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+
 @layer base {
-  body {
-    @apply bg-google-bgLight text-google-charcoal antialiased;
-    font-feature-settings: "kern" 1, "liga" 1;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
   }
 
-  /* Enforce visible borders on all interactive form elements */
+  html {
+    font-size: 14px;
+    zoom: 1.2; /* Default 120% zoom requested by user */
+  }
+
+  body {
+    background-color: var(--bg-root);
+    color: var(--text-primary);
+    @apply antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'SF Pro Text', sans-serif;
+    font-feature-settings: "kern" 1, "liga" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
+
+  /* Premium custom slim scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background-color: var(--scrollbar-thumb); border-radius: 999px; border: 1.5px solid transparent; background-clip: padding-box; }
+  *::-webkit-scrollbar-thumb:hover { background-color: var(--accent-blue); }
+
+  /* Input/select baseline */
   input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
-    @apply border border-slate-400 rounded-lg bg-white text-slate-800;
+    background-color: var(--bg-card);
+    border: 1px solid var(--color-border);
+    color: var(--text-primary);
+    @apply rounded-lg;
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
@@ -22,49 +110,30 @@
   input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus,
   select:focus,
   textarea:focus {
-    @apply border-blue-500 ring-1 ring-blue-500/30;
+    border-color: var(--accent-blue) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
   }
 
   input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):disabled,
   select:disabled,
   textarea:disabled {
-    @apply bg-slate-100 border-slate-300 text-slate-400 cursor-not-allowed opacity-60;
-  }
-
-  /* Custom slim scrollbars */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
-  }
-
-  *::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background-color: #cbd5e1;
-    border-radius: 999px;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: #94a3b8;
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 }
 
+/* ============================================================
+   ANIMATIONS & KEYFRAMES
+   ============================================================ */
+
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes shimmer {
@@ -72,6 +141,475 @@
   to   { background-position:  200% center; }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+@keyframes bootScan {
+  0%   { opacity: 0; transform: scaleX(0); }
+  50%  { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%       { box-shadow: 0 0 0 8px transparent; }
+}
+
+@keyframes status-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.animate-fade-in   { animation: fadeIn  0.30s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.animate-slide-up  { animation: slideUp 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.animate-status    { animation: status-dot 2s ease-in-out infinite; }
+
+/* ============================================================
+   PREMIUM LAYOUT LAYER — Applied via CSS Variables
+   These override ALL Tailwind utility classes in both themes
+   ============================================================ */
+
+/* === Root shell === */
+.premium-root {
+  background-color: var(--bg-root);
+  color: var(--text-primary);
+}
+
+/* === Sidebar === */
+.premium-sidebar {
+  background-color: var(--bg-panel);
+  border-right: 1px solid var(--color-border);
+}
+
+/* === Header / Toolbar === */
+.premium-header {
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+/* === Cards and Sections === */
+.premium-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+.premium-card-secondary {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--color-border-soft);
+}
+
+/* === Navigation Buttons === */
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  color: var(--text-secondary);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.nav-btn:hover {
+  background-color: var(--nav-hover-bg);
+  color: var(--text-primary);
+}
+
+.nav-btn.active {
+  background-color: var(--nav-active-bg);
+  color: var(--nav-active-text);
+  border: 1px solid var(--nav-active-border);
+  box-shadow: var(--shadow-card);
+}
+
+/* Light mode active nav: clean blue tint */
+.nav-btn.active { background-color: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.dark .nav-btn.active {
+  background-color: rgba(255,255,255,0.04) !important;
+  color: #ffffff !important;
+  border-color: rgba(255,255,255,0.08) !important;
+  box-shadow: inset 0 0 0 0 transparent !important;
+}
+
+/* === Text Utilities === */
+.text-primary    { color: var(--text-primary); }
+.text-secondary  { color: var(--text-secondary); }
+.text-muted      { color: var(--text-muted); }
+.text-micro      { color: var(--text-micro); }
+
+/* === Premium Badge === */
+.premium-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* === Status indicators === */
+.status-online {
+  background-color: rgba(0,0,0,0.04);
+  color: var(--text-secondary);
+  border: 1px solid var(--color-border);
+}
+.status-active {
+  background-color: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+.dark .status-online { background: rgba(255,255,255,0.04); color: var(--text-muted); border-color: rgba(255,255,255,0.08); }
+.dark .status-active { background: rgba(239,68,68,0.08); color: #f87171; border-color: rgba(248,113,113,0.2); }
+
+/* === Metric Cards in Header === */
+.metric-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.metric-value {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+/* === Preset Buttons (Telemetry presets) === */
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  letter-spacing: -0.01em;
+}
+.preset-btn:hover:not(:disabled) {
+  background-color: var(--nav-hover-bg);
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.preset-btn.selected {
+  background-color: var(--accent-glow);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.dark .preset-btn { background-color: #111111; border-color: #1f1f23; color: #71717a; }
+.dark .preset-btn:hover:not(:disabled) { background-color: #161616; border-color: #3b82f6; color: #f5f5f7; }
+.dark .preset-btn.selected { background-color: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); color: #60a5fa; }
+
+/* === Primary Action Button === */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background-color: var(--accent-blue);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-blue-hover);
+  box-shadow: 0 4px 16px var(--accent-glow), 0 1px 4px rgba(0,0,0,0.2);
+  transform: translateY(-1px);
+}
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.dark .btn-primary { background-color: #3b82f6; }
+.dark .btn-primary:hover:not(:disabled) { background-color: #2563eb; box-shadow: 0 4px 20px rgba(59,130,246,0.3); }
+
+/* === Telemetry OT Register Widgets === */
+.ot-register {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-secondary);
+  transition: all 0.2s ease;
+}
+.ot-register.critical {
+  background-color: rgba(239, 68, 68, 0.04);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.dark .ot-register { background-color: #111111; border-color: #1f1f23; }
+.dark .ot-register.critical { background-color: rgba(239,68,68,0.05); border-color: rgba(239,68,68,0.2); }
+
+/* === Range Sliders (custom premium track) === */
+input[type="range"].premium-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border: none !important;
+  background: linear-gradient(to right, var(--accent-blue) 0%, var(--accent-blue) var(--slider-fill, 50%), var(--color-border) var(--slider-fill, 50%), var(--color-border) 100%);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].premium-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 0 2px var(--accent-blue);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+input[type="range"].premium-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px var(--accent-glow), 0 0 0 2px var(--accent-blue);
+}
+input[type="range"].premium-slider.critical::-webkit-slider-thumb {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #ef4444;
+}
+input[type="range"].premium-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 0 2px var(--accent-blue);
+  cursor: pointer;
+}
+
+/* === Log / Console terminal === */
+.premium-terminal {
+  background-color: #000000;
+  border: 1px solid #1f1f23;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  color: #d4d4d8;
+}
+.light .premium-terminal,
+:not(.dark) .premium-terminal {
+  background-color: #0d1117;
+  border-color: #21262d;
+  color: #c9d1d9;
+}
+
+/* === Modal Overlay (Glassmorphism) === */
+.premium-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.premium-modal-panel {
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 16px;
+  box-shadow: var(--shadow-elevated);
+}
+.dark .premium-modal-overlay { background-color: rgba(0,0,0,0.85); }
+.dark .premium-modal-panel {
+  background-color: #111111;
+  border-color: #2a2a2e;
+  box-shadow: 0 0 0 1px #2a2a2e, 0 24px 80px rgba(0,0,0,0.9);
+}
+
+/* === Section Headers === */
+.section-header-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 800;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  letter-spacing: 0;
+}
+.dark .section-header-num {
+  background-color: var(--bg-tertiary);
+  color: var(--text-muted);
+  border-color: var(--color-border-soft);
+}
+
+/* === Emergency / Alert button === */
+.btn-inject-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(239,68,68,0.3);
+}
+.btn-inject-alert:hover { background-color: #dc2626; box-shadow: 0 4px 16px rgba(239,68,68,0.4); transform: translateY(-1px); }
+
+/* === HITL Authorization Checklist items === */
+.hitl-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--color-border-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.dark .hitl-step { background-color: #161616; border-color: #2a2a2e; }
+
+/* === Separator lines === */
+.premium-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   GLOBAL TAILWIND CLASS OVERRIDES (tokens-based)
+   Applied to legacy markup for backward compatibility
+   ============================================================ */
+
+/* Root backgrounds */
+.bg-\[\#f6f8fc\]  { background-color: var(--bg-root) !important; }
+.dark .bg-\[\#f6f8fc\] { background-color: var(--bg-root) !important; }
+.dark .bg-\[\#030712\] { background-color: var(--bg-root) !important; }
+.dark .bg-\[\#070b14\] { background-color: var(--bg-panel) !important; }
+.dark .bg-\[\#0a0e1a\] { background-color: var(--bg-card) !important; }
+
+/* White card overrides in dark */
+.dark .bg-white { background-color: var(--bg-card) !important; }
+
+/* Slate neutral overrides */
+.dark .bg-slate-50  { background-color: var(--bg-secondary) !important; }
+.dark .bg-slate-100 { background-color: var(--bg-secondary) !important; }
+.dark .bg-slate-800 { background-color: var(--bg-tertiary) !important; }
+.dark .bg-slate-900 { background-color: var(--bg-secondary) !important; }
+
+/* Sidebar */
+.dark aside {
+  background-color: var(--bg-panel) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Header */
+.dark header {
+  background-color: var(--bg-panel) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Sections */
+.dark section {
+  background-color: var(--bg-card) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* All borders */
+.dark .border-slate-300 { border-color: var(--color-border) !important; }
+.dark .border-slate-200 { border-color: var(--color-border) !important; }
+.dark .border-slate-150 { border-color: var(--color-border) !important; }
+.dark .border-slate-100 { border-color: var(--color-border-soft) !important; }
+.dark .border-slate-800 { border-color: var(--color-border) !important; }
+.dark hr { border-color: var(--color-border) !important; }
+
+/* Text color normalization */
+.dark .text-slate-900, .dark .text-slate-850, .dark .text-slate-800, .dark .text-slate-700 { color: var(--text-primary) !important; }
+.dark .text-slate-600 { color: var(--text-secondary) !important; }
+.dark .text-slate-500, .dark .text-slate-400 { color: var(--text-muted) !important; }
+.dark h1,.dark h2,.dark h3,.dark h4,.dark h5,.dark h6 { color: var(--text-primary) !important; }
+
+/* Nav active override for dark — targets old bg-[#c2e7ff] pattern */
+.dark .bg-\[\#c2e7ff\] {
+  background-color: rgba(255,255,255,0.05) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+/* Hover states in dark */
+.dark .hover\:bg-slate-200\/50:hover,
+.dark .hover\:bg-slate-200:hover { background-color: rgba(255,255,255,0.04) !important; }
+
+/* Forms */
+.dark input, .dark select, .dark textarea {
+  background-color: var(--bg-card) !important;
+  border-color: var(--color-border) !important;
+  color: var(--text-primary) !important;
+}
+.dark input:focus, .dark select:focus, .dark textarea:focus {
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+}
+.dark input:disabled, .dark select:disabled, .dark textarea:disabled {
+  opacity: 0.4 !important;
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Range sliders — strip default dark override to let premium-slider work */
+.dark input[type="range"] { background-color: transparent !important; border: none !important; }
+
+/* === Status badge colors (always token-safe) === */
+.dark .bg-red-50   { background-color: rgba(239,68,68,0.07) !important; border-color: rgba(239,68,68,0.18) !important; }
+.dark .bg-emerald-50, .dark .bg-green-50 { background-color: rgba(16,185,129,0.07) !important; }
+.dark .bg-amber-50, .dark .bg-yellow-50  { background-color: rgba(245,158,11,0.07) !important; }
+.dark .bg-blue-50  { background-color: rgba(59,130,246,0.07) !important; }
+.dark .bg-purple-50 { background-color: rgba(139,92,246,0.07) !important; }
+.dark .bg-rose-50  { background-color: rgba(244,63,94,0.07) !important; }
+
+/* === Tables === */
+.dark tr:hover { background-color: var(--bg-secondary) !important; }
+.dark tbody tr { border-color: var(--color-border) !important; }
+
+/* === Modal overlays === */
+.dark .fixed.inset-0 > div > div.bg-white,
+.dark .relative.bg-white {
+  background-color: var(--bg-card) !important;
+  border-color: var(--color-border-soft) !important;
+}
+
+/* === Monospace / log block === */
+.dark .font-mono:not(button):not(span):not(code):not(strong) {
+  background-color: #000000 !important;
+}
+
+/* Light mode section cards — clear and elevated */
+section {
+  background-color: #ffffff;
+  border: 1px solid #dde2e9;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
 }

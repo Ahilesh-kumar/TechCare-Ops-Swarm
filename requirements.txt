@@ -4,3 +4,5 @@ band-sdk
 fastapi
 uvicorn[standard]
 httpx
+aiosqlite
+slowapi

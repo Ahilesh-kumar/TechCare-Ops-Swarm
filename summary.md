@@ -30,14 +30,14 @@ graph TD
         Auditor -->|Validates compliance & issues report| Report[Final Markdown Report]
     end
     
-    Analyst -.->|Reads| DB[(mock_database.py)]
+    Analyst -.->|Reads| DB[(dynamic_db.py)]
     SafeGuard -->|3. Return Report| Streamlit
     Streamlit -->|4. Download| PDF[Incident_Report.md]
 ```
 
 ### 1. Multi-Agent SafeGuard (Band SDK)
 *   **Coordinator Agent:** The first point of contact. Detects the machine/system name, creates a Band chatroom, and hands over to the Systems Analyst.
-*   **Systems Analyst Agent:** The technical resolver. Reads the equipment's specifications and safety thresholds from `mock_database.py` and produces a precise step-by-step resolution.
+*   **Systems Analyst Agent:** The technical resolver. Reads the equipment's specifications and safety thresholds from `dynamic_db.py` and produces a precise step-by-step resolution.
 *   **Safety Auditor Agent:** The compliance checker. Validates the analyst's resolution against safety laws and outputs a structured compliance report.
 
 ### 2. The Brains (Groq & Grok APIs)
@@ -54,7 +54,7 @@ graph TD
 
 | Phase | Milestone | Deliverables | Status |
 | :--- | :--- | :--- | :--- |
-| **Phase 1** | Synthesize Fake Data | `mock_database.py` (Vat 4, Server Rack B, Robotic Arm 9) | ⏳ Planned |
+| **Phase 1** | Synthesize Fake Data | `dynamic_db.py` (Vat 4, Server Rack B, Robotic Arm 9) | ⏳ Planned |
 | **Phase 2** | Define System Prompts | `prompt_rules.md` (System instructions for the 3 agents) | ⏳ Planned |
 | **Phase 3** | Implement SafeGuard Logic | `agents.py` (Groq API client + Band SDK agent definitions) | ⏳ Planned |
 | **Phase 4** | Build Interactive UI | `app.py` (Streamlit dashboard with mock trigger buttons) | ⏳ Planned |

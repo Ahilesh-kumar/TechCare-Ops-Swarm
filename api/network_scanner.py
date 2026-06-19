@@ -1,7 +1,7 @@
 # api/network_scanner.py
 import asyncio
 import logging
-from api.mock_database import ENTERPRISE_KNOWLEDGE_BASE
+from api.dynamic_db import ENTERPRISE_KNOWLEDGE_BASE
 from api.agents import SystemsAnalystAdapter
 
 logger = logging.getLogger("NetworkScanner")
@@ -24,7 +24,7 @@ async def simulate_network_scan_async(status_callback=None):
         {"ip": "192.168.1.15", "name": "Cisco Switch 2960"},
         {"ip": "192.168.1.50", "name": "Siemens S7-1200 PLC"},
         {"ip": "192.168.1.110", "name": "Caterpillar C15 Generator"},
-        {"ip": "192.168.1.200", "name": "Vat 4"},
+        {"ip": "192.168.1.200", "name": "EV Battery Vat 4"},
     ]
 
     analyst = SystemsAnalystAdapter()

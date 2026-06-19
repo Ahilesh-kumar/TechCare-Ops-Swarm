@@ -67,7 +67,7 @@ async def run_agent_with_retry(name, agent_factory, *args, startup_delay: float 
             if "rate-limit" in err_str or "429" in err_str or "supersede" in err_str or "already_connected" in err_str or "session.already_connected" in err_str:
                 # Set a much longer sleep time (45-60 seconds) to avoid connection wars and allow other instances to stay stable
                 sleep_time = 45.0
-                logger.warning(f"⚠️ Agent '{name}' hit a connection conflict or rate-limit (supersede/already_connected).")
+                logger.warning(f"WARNING: Agent '{name}' hit a connection conflict or rate-limit (supersede/already_connected).")
                 logger.warning(f"  To avoid connection wars, backing off for {sleep_time} seconds before retrying...")
             else:
                 sleep_time = backoff
@@ -106,7 +106,7 @@ async def main():
         missing_vars.append("BAND_AUDITOR_ID / BAND_AUDITOR_TOKEN")
 
     if missing_vars:
-        print("\n❌ Error: Missing mandatory Agent credentials in your .env file.")
+        print("\nERROR: Missing mandatory Agent credentials in your .env file.")
         print("Please ensure the following variables are configured:")
         for var in missing_vars:
             print(f"  - {var}")
@@ -218,7 +218,7 @@ if __name__ == "__main__":
         _lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _lock_socket.bind(("127.0.0.1", 18274))
     except socket.error:
-        print("\n❌ Error: Another instance of run_agents.py is already running!")
+        print("\nERROR: Another instance of run_agents.py is already running!")
         print("Please stop the existing instance before starting a new one.")
         sys.exit(1)
 
